@@ -11,5 +11,5 @@ parking_lot.optional = true
 assert-impl = "0.1.3"
 
 [features]
-default = [] #["parking_lot"]
+default = ["parking_lot"]
 parking_lot = ["dep:parking_lot"]

@@ -1,5 +1,8 @@
 use std::{cell::Cell, u32};
 
+#[cfg(test)]
+use assert_impl::assert_impl;
+
 use crate::marker::cookie::{CookieJar, ReadCookie, WriteCookie};
 
 impl CookieJar for Cell<u32> {
@@ -8,8 +11,9 @@ impl CookieJar for Cell<u32> {
     type WriteToken<'a> = CellZero<'a>;
 
     fn try_read(&self) -> Option<Self::ReadToken<'_>> {
-        if self.get() < u32::MAX {
-            self.update(|n| n + 1);
+        let n = self.get();
+        if n < u32::MAX {
+            self.set(n + 1);
             Some(CellDecr { cell: self })
         } else {
             None
@@ -17,12 +21,12 @@ impl CookieJar for Cell<u32> {
     }
 
     fn read(&self) -> Self::ReadToken<'_> {
-        self.try_read().unwrap()
+        self.try_read().expect("Deadlock")
     }
 
     fn try_write(&self) -> Option<Self::WriteToken<'_>> {
         if self.get() == 0 {
-            self.update(|n| n + 1);
+            self.set(u32::MAX);
             Some(CellZero { cell: self })
         } else {
             None
@@ -30,7 +34,7 @@ impl CookieJar for Cell<u32> {
     }
 
     fn write(&self) -> Self::WriteToken<'_> {
-        self.try_write().unwrap()
+        self.try_write().expect("Deadlock")
     }
 }
 
@@ -79,4 +83,15 @@ impl<'a> WriteCookie for CellZero<'a> {
         cell.set(1);
         CellDecr { cell }
     }
+}
+
+impl<'a> Drop for CellZero<'a> {
+    fn drop(&mut self) {
+        self.cell.set(0);
+    }
+}
+
+#[test]
+fn marker_trait_impls() {
+    assert_impl!(!Send: CellDecr<'static>, CellZero<'static>);
 }

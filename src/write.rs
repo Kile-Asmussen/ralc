@@ -24,7 +24,7 @@ mod _limit_visibility {
         /// 1. Convertible to a mutalbe reference
         ledger: NonNull<L>,
         /// ## Safety invariants:
-        /// 1. Convertible to a mutalbe reference
+        /// 1. Convertible to a mutalbe reference and have been created from a box
         data: NonNull<ManuallyDrop<T>>,
         _phantom: PhantomData<&'a mut T>,
     }
@@ -34,7 +34,7 @@ mod _limit_visibility {
         ///
         /// 1. `ledger` must be convertible to a mutable reference
         /// 2. `cookie` must have been created from the cookie jar of `ledger`, or upgraded from one
-        /// 3. `data` must be convertible to a mutable reference
+        /// 3. `data` must be have been created from a box and be convertible to a mutable reference
         pub(crate) unsafe fn from_parts(
             cookie: <L::Cookies as CookieJar>::WriteToken<'a>,
             generation: NonZeroU64,
@@ -66,8 +66,9 @@ mod _limit_visibility {
             self.ledger
         }
 
-        /// # Safety guarantees:
-        /// 1. The returned pointer is convertible to a mutable reference
+        /// # Safety guarantees
+        /// 1. The pointer returned is convertible to a reference and was
+        ///    created from a Box
         pub(crate) fn data(&self) -> NonNull<ManuallyDrop<T>> {
             self.data
         }
@@ -78,6 +79,24 @@ mod _limit_visibility {
             &mut self,
         ) -> &mut ManuallyDrop<<L::Cookies as CookieJar>::WriteToken<'a>> {
             &mut self.cookie
+        }
+
+        /// # Safety requirements
+        /// 1. The owned reference this WriteRalc instance came from must not be dropped
+        pub(crate) unsafe fn unsafe_into_inner(mut self) -> T {
+            let res = unsafe {
+                // SAFETY:
+                // 1. Guaranteed directly
+                let mut data = *Box::from_raw(self.data().as_ptr());
+                // SAFETY:
+                // 1. forget is called just below
+                ManuallyDrop::drop(self.cookie_mut());
+                // SAFETY:
+                // 1. data goes out of scope right after
+                ManuallyDrop::take(&mut data)
+            };
+            std::mem::forget(self);
+            res
         }
     }
 }

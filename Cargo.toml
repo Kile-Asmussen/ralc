@@ -1,7 +1,8 @@
 [package]
-name = "gracias"
+name = "racl"
 version = "0.1.0"
 edition = "2024"
+description = "Reallocation counting-based smart pointers"
 
 [dependencies]
 parking_lot.version = "0.12.5"

@@ -67,20 +67,22 @@ impl<T, L: Ledger> Drop for OwnedRalc<T, L> {
 
 impl<T, L: Ledger> OwnedRalc<T, L> {
     pub fn try_into_inner(self) -> Result<T, Self> {
-        let res: T;
-        if let Some(mut w) = self.try_write() {
+        let res = if let Some(w) = self.try_write() {
             unsafe {
-                L::bump(self.ledger_ptr());
-                let mut data = *Box::from_raw(self.data().as_ptr());
-                ManuallyDrop::drop(w.cookie_mut());
-                res = ManuallyDrop::take(&mut data)
-            };
-            std::mem::forget(w);
+                // SAFETY:
+                // 1. We forget self just below
+                w.unsafe_into_inner()
+            }
         } else {
             return Err(self);
         };
+        unsafe {
+            // SAFETY:
+            // 1. Forget is called just below
+            L::bump(self.ledger_ptr());
+        }
         std::mem::forget(self);
-        Ok(res)
+        return Ok(res);
     }
 
     pub fn borrow(&self) -> BorrowRalc<T, L> {

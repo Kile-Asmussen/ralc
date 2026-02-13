@@ -1,3 +1,6 @@
+pub mod celllock;
+pub mod parklock;
+
 pub trait ReadCookie: Clone {
     type UpgradesTo: WriteCookie;
 
@@ -13,6 +16,8 @@ pub trait WriteCookie {
 pub trait CookieJar {
     type ReadToken<'a>: ReadCookie<UpgradesTo = Self::WriteToken<'a>>;
     type WriteToken<'a>: WriteCookie<DowngradesTo = Self::ReadToken<'a>>;
+
+    fn count(&self) -> u32;
 
     fn try_read(&self) -> Option<Self::ReadToken<'_>>;
     fn read(&self) -> Self::ReadToken<'_>;

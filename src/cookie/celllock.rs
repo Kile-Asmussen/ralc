@@ -3,7 +3,7 @@ use std::{cell::Cell, u32};
 #[cfg(test)]
 use assert_impl::assert_impl;
 
-use crate::marker::cookie::{CookieJar, ReadCookie, WriteCookie};
+use crate::cookie::{CookieJar, ReadCookie, WriteCookie};
 
 impl CookieJar for Cell<u32> {
     type ReadToken<'a> = CellDecr<'a>;
@@ -36,8 +36,13 @@ impl CookieJar for Cell<u32> {
     fn write(&self) -> Self::WriteToken<'_> {
         self.try_write().expect("Deadlock")
     }
+
+    fn count(&self) -> u32 {
+        self.get()
+    }
 }
 
+#[repr(transparent)]
 pub struct CellDecr<'a> {
     cell: &'a Cell<u32>,
 }
@@ -70,6 +75,7 @@ impl<'a> Drop for CellDecr<'a> {
     }
 }
 
+#[repr(transparent)]
 pub struct CellZero<'a> {
     cell: &'a Cell<u32>,
 }
@@ -94,4 +100,5 @@ impl<'a> Drop for CellZero<'a> {
 #[test]
 fn marker_trait_impls() {
     assert_impl!(!Send: CellDecr<'static>, CellZero<'static>);
+    assert_impl!(!Sync: CellDecr<'static>, CellZero<'static>);
 }

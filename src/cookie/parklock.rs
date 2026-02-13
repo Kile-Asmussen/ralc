@@ -4,7 +4,7 @@ use parking_lot::{RawRwLock as RwLock, lock_api::RawRwLock};
 use assert_impl::assert_impl;
 
 #[repr(transparent)]
-pub(crate) struct ParkLock(RwLock);
+pub struct ParkLock(RwLock);
 
 impl ParkLock {
     pub(crate) fn new() -> Self {
@@ -42,6 +42,7 @@ impl CookieJar for ParkLock {
             None
         }
     }
+
     fn read(&self) -> ParkReadToken<'_> {
         self.0.lock_shared();
         unsafe {
@@ -59,21 +60,34 @@ impl CookieJar for ParkLock {
             ParkWriteToken::new(&self.0)
         }
     }
+
+    fn count(&self) -> u32 {
+        if self.0.try_lock_exclusive() {
+            unsafe {
+                self.0.unlock_exclusive();
+            }
+            0
+        } else if self.0.try_lock_shared() {
+            unsafe {
+                self.0.unlock_shared();
+            }
+            1
+        } else {
+            u32::MAX
+        }
+    }
 }
 
 pub(crate) use limit_field_access::{ParkReadToken, ParkWriteToken};
 
-use crate::marker::cookie::CookieJar;
+use crate::cookie::CookieJar;
 
 mod limit_field_access {
     // TODO: refactor once https://github.com/rust-lang/rust-project-goals/issues/273 passes.
 
     use parking_lot::lock_api::{RawRwLock, RawRwLockDowngrade, RawRwLockUpgrade};
 
-    use crate::marker::{
-        cookie::{ReadCookie, WriteCookie},
-        parklock::ParkLock,
-    };
+    use crate::cookie::{ReadCookie, WriteCookie};
 
     use super::RwLock;
 
@@ -87,7 +101,7 @@ mod limit_field_access {
     /// 1. The lock pointed to has a shared reference count at least equal to
     ///    the number of instances of this struct currently existing.
     #[repr(transparent)]
-    pub(crate) struct ParkReadToken<'a> {
+    pub struct ParkReadToken<'a> {
         lockref: &'a RwLock,
     }
 
@@ -162,7 +176,7 @@ mod limit_field_access {
     ///
     /// 1. The lock pointed to is locked for exclusive access.
     #[repr(transparent)]
-    pub(crate) struct ParkWriteToken<'a> {
+    pub struct ParkWriteToken<'a> {
         lockref: &'a RwLock,
     }
 

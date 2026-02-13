@@ -13,6 +13,9 @@ mod allocator;
 mod global;
 mod local;
 
+pub use global::GlobalLedger;
+pub use local::LocalLedger;
+
 pub struct SyncLedger {
     count: AtomicU64,
     lock: ParkLock,

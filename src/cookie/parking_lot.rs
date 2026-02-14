@@ -43,24 +43,25 @@ impl CookieJar for ParkLock {
         }
     }
 
-    fn read(&self) -> ParkReadToken<'_> {
+    fn read(&self) -> Option<ParkReadToken<'_>> {
         self.0.lock_shared();
-        unsafe {
+        Some(unsafe {
             // SAFETY:
             // 1. Locked just above.
             ParkReadToken::new(&self.0)
-        }
+        })
     }
 
-    fn write(&self) -> ParkWriteToken<'_> {
+    fn write(&self) -> Option<ParkWriteToken<'_>> {
         self.0.lock_exclusive();
-        unsafe {
+        Some(unsafe {
             // SAFETY:
             // 1. Locked just above.
             ParkWriteToken::new(&self.0)
-        }
+        })
     }
 
+    #[cfg(test)]
     fn count(&self) -> u32 {
         if self.0.try_lock_exclusive() {
             unsafe {

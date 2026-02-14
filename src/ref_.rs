@@ -1,19 +1,19 @@
-use std::{marker::PhantomData, mem::ManuallyDrop, num::NonZeroU64, ops::Deref, ptr::NonNull};
+use std::{fmt, marker::PhantomData, mem::ManuallyDrop, num::NonZeroU64, ops::Deref, ptr::NonNull};
 
 use crate::{
     cookie::{CookieJar, ReadCookie},
     ledgers::Ledger,
-    write::WriteRalc,
+    mut_::RalcMut,
 };
 
 mod _limit_visibility {
     use super::*;
 
-    pub struct ReadRalc<'a, T, L: Ledger> {
+    pub struct RalcRef<'a, T, L: Ledger> {
         /// ## Safety invariants:
         /// 1. This read token was created from [`Self::ledger`]'s cookie jar, or cloned or downgrade from one
         cookie: ManuallyDrop<<L::Cookies as CookieJar>::ReadToken<'a>>,
-        generation: NonZeroU64,
+        reallocation: NonZeroU64,
         /// ## Safety invariants:
         /// 1. Convertible to reference
         ledger: NonNull<L>,
@@ -23,7 +23,7 @@ mod _limit_visibility {
         _phantom: PhantomData<&'a T>,
     }
 
-    impl<'a, T, L: Ledger> ReadRalc<'a, T, L> {
+    impl<'a, T, L: Ledger> RalcRef<'a, T, L> {
         /// # Safety
         ///
         /// 1. `ledger` must be convertible to a reference
@@ -31,7 +31,7 @@ mod _limit_visibility {
         /// 3. `data` must be convertible to a reference
         pub(crate) unsafe fn from_parts(
             cookie: <L::Cookies as CookieJar>::ReadToken<'a>,
-            generation: NonZeroU64,
+            reallocation: NonZeroU64,
             ledger: NonNull<L>,
             data: NonNull<ManuallyDrop<T>>,
         ) -> Self {
@@ -45,13 +45,13 @@ mod _limit_visibility {
                 // SAFETY:
                 // 1. Guaranteed by caller
                 data,
-                generation,
+                reallocation,
                 _phantom: PhantomData,
             }
         }
 
-        pub(crate) fn generation(&self) -> NonZeroU64 {
-            self.generation
+        pub(crate) fn reallocation(&self) -> NonZeroU64 {
+            self.reallocation
         }
 
         pub(crate) fn ledger_ptr(&self) -> NonNull<L> {
@@ -69,13 +69,13 @@ mod _limit_visibility {
         }
     }
 
-    impl<'a, T, L: Ledger> Clone for ReadRalc<'a, T, L> {
+    impl<'a, T, L: Ledger> Clone for RalcRef<'a, T, L> {
         fn clone(&self) -> Self {
             Self {
                 // SAFETY:
                 // 1. Upheld by invariant
                 cookie: self.cookie.clone(),
-                generation: self.generation.clone(),
+                reallocation: self.reallocation.clone(),
                 // SAFETY:
                 // 1. Upheld by invariant
                 ledger: self.ledger.clone(),
@@ -88,10 +88,10 @@ mod _limit_visibility {
     }
 }
 
-pub use _limit_visibility::ReadRalc;
+pub use _limit_visibility::RalcRef;
 
-impl<'a, T, L: Ledger> ReadRalc<'a, T, L> {
-    pub fn try_into_write(mut self) -> Result<WriteRalc<'a, T, L>, Self> {
+impl<'a, T, L: Ledger> RalcRef<'a, T, L> {
+    pub fn try_into_write(mut self) -> Result<RalcMut<'a, T, L>, Self> {
         let res = unsafe {
             // SAFETY:
             // 1. Call to std::mem::forget on self just below
@@ -104,8 +104,8 @@ impl<'a, T, L: Ledger> ReadRalc<'a, T, L> {
     /// # Safety requirements
     /// 1. If the function returns `Ok` then `self` must not be dropped
     /// 2. If the function retunrs `Ok` then `self` must not be used again
-    unsafe fn write_unsafe(&mut self) -> Result<WriteRalc<'a, T, L>, Self> {
-        let generation = self.generation();
+    unsafe fn write_unsafe(&mut self) -> Result<RalcMut<'a, T, L>, Self> {
+        let reallocation = self.reallocation();
         let ledger = self.ledger_ptr();
         let data = self.data();
         let cookie = unsafe {
@@ -118,20 +118,20 @@ impl<'a, T, L: Ledger> ReadRalc<'a, T, L> {
             Ok(cookie) => Ok(unsafe {
                 // SAFETY:
                 // 1.
-                WriteRalc::from_parts(cookie, generation, ledger, data)
+                RalcMut::from_parts(cookie, reallocation, ledger, data)
             }),
             Err(cookie) => Err(unsafe {
                 // SAFETY:
                 // 1. Guaranteed by invariant on self
                 // 2. Guaranteed by invariant on self
                 // 3. Guaranteed by invariant on self
-                Self::from_parts(cookie, generation, ledger, data)
+                Self::from_parts(cookie, reallocation, ledger, data)
             }),
         }
     }
 }
 
-impl<'a, T, L: Ledger> Deref for ReadRalc<'a, T, L> {
+impl<'a, T, L: Ledger> Deref for RalcRef<'a, T, L> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -141,7 +141,7 @@ impl<'a, T, L: Ledger> Deref for ReadRalc<'a, T, L> {
     }
 }
 
-impl<'a, T, L: Ledger> Drop for ReadRalc<'a, T, L> {
+impl<'a, T, L: Ledger> Drop for RalcRef<'a, T, L> {
     fn drop(&mut self) {
         let write_ralc = unsafe {
             // SAFETY:
@@ -157,5 +157,17 @@ impl<'a, T, L: Ledger> Drop for ReadRalc<'a, T, L> {
                 ManuallyDrop::drop(r.cookie_mut());
             },
         }
+    }
+}
+
+impl<'a, T: fmt::Debug, L: Ledger> fmt::Debug for RalcRef<'a, T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.deref(), f)
+    }
+}
+
+impl<'a, T: fmt::Display, L: Ledger> fmt::Display for RalcRef<'a, T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.deref(), f)
     }
 }

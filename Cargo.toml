@@ -6,11 +6,14 @@ description = "Reallocation counting-based smart pointers"
 
 [dependencies]
 parking_lot.version = "0.12.5"
-parking_lot.optional = true
+
+tokio.version = "1.49.0"
+tokio.optional = true
+tokio.features = ["sync", "rt"]
 
 [dev-dependencies]
 assert-impl = "0.1.3"
 
 [features]
-default = ["parking_lot"]
-parking_lot = ["dep:parking_lot"]
+default = ["tokio"]
+tokio = ["dep:tokio"]

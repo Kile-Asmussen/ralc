@@ -1,6 +1,17 @@
-use std::{fmt, mem::ManuallyDrop, num::NonZeroU64, ptr::NonNull};
+use std::{
+    fmt::{self},
+    mem::ManuallyDrop,
+    num::NonZeroU64,
+    ptr::NonNull,
+};
 
-use crate::{BorrowRalc, cookie::CookieJar, ledgers::Ledger, read::ReadRalc, write::WriteRalc};
+use crate::{
+    BorrowRalc,
+    cookie::CookieJar,
+    ledgers::{Ledger, LedgerExt},
+    mut_::RalcMut,
+    ref_::RalcRef,
+};
 
 mod _limit_visibility {
 
@@ -9,6 +20,7 @@ mod _limit_visibility {
     pub struct OwnedRalc<T, L: Ledger> {
         /// # Safety guarantees:
         /// 1. Convertible to a reference
+        /// 2. Referenced ledger has a [`.reallocation()`](Ledger::reallocation) count that is not NonZeroU64::MAX
         ledger: NonNull<L>,
         /// # Safety guarantees:
         /// 1. Was greated from a Box
@@ -20,6 +32,7 @@ mod _limit_visibility {
         ///
         /// 1. `ledger` must be convertible to a reference
         /// 2. `data` must be have been created from a box
+        /// 3. ledger has a [`.reallocation()`](Ledger::reallocation) count that is not `NonZeroU64::MAX`
         pub(crate) unsafe fn from_parts(
             ledger: NonNull<L>,
             data: NonNull<ManuallyDrop<T>>,
@@ -50,17 +63,12 @@ pub use _limit_visibility::OwnedRalc;
 
 impl<T, L: Ledger> Drop for OwnedRalc<T, L> {
     fn drop(&mut self) {
-        let generation = self.ledger().generation();
-        unsafe {
-            // SAFETY:
-            // 1. Directly guaranteed
-            // 2. This is `drop` and none of the other Ralc structs call this function in their `drop`
-            L::bump(self.ledger_ptr());
-        };
+        let reallocation = self.ledger().reallocation();
+        self.ledger().bump();
         std::mem::drop(unsafe {
             // SAFETY:
-            // 1. Guaranteed by invariant on `Ledger::bump()`
-            self.try_write_with_generation(generation)
+            // 1. Guaranteed by `LedgerExt:bump()`
+            self.try_write_with_reallocation(reallocation)
         });
     }
 }
@@ -76,11 +84,7 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
         } else {
             return Err(self);
         };
-        unsafe {
-            // SAFETY:
-            // 1. Forget is called just below
-            L::bump(self.ledger_ptr());
-        }
+        self.ledger().bump();
         std::mem::forget(self);
         return Ok(res);
     }
@@ -94,32 +98,37 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
         }
     }
 
-    pub fn read(&self) -> ReadRalc<'_, T, L> {
-        let cookie = self.ledger().cookie().read();
+    pub fn read(&self) -> RalcRef<'_, T, L> {
+        let cookie = self
+            .ledger()
+            .cookie()
+            .read()
+            .unwrap_or_else(|| L::read_failure());
+
         unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Created just above
             // 3. Guarnteed directly
-            ReadRalc::from_parts(
+            RalcRef::from_parts(
                 cookie,
-                self.ledger().generation(),
+                self.ledger().reallocation(),
                 self.ledger_ptr(),
                 self.data(),
             )
         }
     }
 
-    pub fn try_read(&self) -> Option<ReadRalc<'_, T, L>> {
+    pub fn try_read(&self) -> Option<RalcRef<'_, T, L>> {
         if let Some(cookie) = self.ledger().cookie().try_read() {
             Some(unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
                 // 2. Created just above
                 // 3. Guarnteed directly
-                ReadRalc::from_parts(
+                RalcRef::from_parts(
                     cookie,
-                    self.ledger().generation(),
+                    self.ledger().reallocation(),
                     self.ledger_ptr(),
                     self.data(),
                 )
@@ -129,41 +138,46 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
         }
     }
 
-    pub fn write(&self) -> WriteRalc<'_, T, L> {
-        let cookie = self.ledger().cookie().write();
+    pub fn write(&self) -> RalcMut<'_, T, L> {
+        let cookie = self
+            .ledger()
+            .cookie()
+            .write()
+            .unwrap_or_else(|| L::write_failure());
+
         unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Created just above
             // 3. Guaranteed directly
-            WriteRalc::from_parts(
+            RalcMut::from_parts(
                 cookie,
-                self.ledger().generation(),
+                self.ledger().reallocation(),
                 self.ledger_ptr(),
                 self.data(),
             )
         }
     }
 
-    pub fn try_write(&self) -> Option<WriteRalc<'_, T, L>> {
+    pub fn try_write(&self) -> Option<RalcMut<'_, T, L>> {
         // SAFETY:
         // 1. Self evident
-        unsafe { self.try_write_with_generation(self.ledger().generation()) }
+        unsafe { self.try_write_with_reallocation(self.ledger().reallocation()) }
     }
 
     /// # Safety requirements
-    /// 1. `generation` is not greater than current value of `.ledger().generation()`
-    pub unsafe fn try_write_with_generation(
+    /// 1. `reallocation` is not greater than current value of [`.ledger().reallocation()`](Ledger::reallocation)
+    pub unsafe fn try_write_with_reallocation(
         &self,
-        generation: NonZeroU64,
-    ) -> Option<WriteRalc<'_, T, L>> {
+        reallocation: NonZeroU64,
+    ) -> Option<RalcMut<'_, T, L>> {
         if let Some(cookie) = self.ledger().cookie().try_write() {
             Some(unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
                 // 2. Created just above
                 // 3. Guaranteed directly
-                WriteRalc::from_parts(cookie, generation, self.ledger_ptr(), self.data())
+                RalcMut::from_parts(cookie, reallocation, self.ledger_ptr(), self.data())
             })
         } else {
             None
@@ -171,8 +185,30 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
     }
 }
 
-impl<T, L: Ledger> fmt::Debug for OwnedRalc<T, L> {
+impl<T: fmt::Debug, L: Ledger> fmt::Debug for OwnedRalc<T, L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OwnedRalc").finish()
+        if f.alternate() {
+            f.debug_tuple("OwnedRalc")
+        } else {
+            f.debug_tuple(&format!("box {} ralc", L::LIFETIME_NAME))
+        }
+        .field(
+            self.try_read()
+                .as_deref()
+                .map(|x| x as &dyn fmt::Debug)
+                .unwrap_or(&std::any::type_name::<T>() as &dyn fmt::Debug),
+        )
+        .finish()
+    }
+}
+
+impl<T: fmt::Display, L: Ledger> fmt::Display for OwnedRalc<T, L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let marker = if f.alternate() { " (owned)" } else { "" };
+        if let Some(r) = self.try_read() {
+            write!(f, "{}{}", r, marker)
+        } else {
+            write!(f, "<unavailable>{}", marker)
+        }
     }
 }

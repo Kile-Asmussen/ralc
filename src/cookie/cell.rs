@@ -20,10 +20,6 @@ impl CookieJar for Cell<u32> {
         }
     }
 
-    fn read(&self) -> Self::ReadToken<'_> {
-        self.try_read().expect("Deadlock")
-    }
-
     fn try_write(&self) -> Option<Self::WriteToken<'_>> {
         if self.get() == 0 {
             self.set(u32::MAX);
@@ -33,10 +29,7 @@ impl CookieJar for Cell<u32> {
         }
     }
 
-    fn write(&self) -> Self::WriteToken<'_> {
-        self.try_write().expect("Deadlock")
-    }
-
+    #[cfg(test)]
     fn count(&self) -> u32 {
         self.get()
     }

@@ -1,134 +1,52 @@
-#[cfg(test)]
-use assert_impl::assert_impl;
-use std::{
-    cell::Cell,
-    num::NonZeroU64,
-    ptr::NonNull,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{num::NonZeroU64, ptr::NonNull};
 
-use crate::{cookie::CookieJar, cookie::parklock::ParkLock};
+use crate::cookie::CookieJar;
 
-mod allocator;
-mod global;
-mod local;
-
-pub use global::GlobalLedger;
-pub use local::LocalLedger;
-
-pub struct SyncLedger {
-    count: AtomicU64,
-    lock: ParkLock,
-}
-
-#[test]
-fn syncledger_is_sync() {
-    assert_impl!(Sync: SyncLedger);
-}
-
-impl Default for SyncLedger {
-    fn default() -> Self {
-        Self {
-            count: AtomicU64::new(1),
-            lock: ParkLock::new(),
-        }
-    }
-}
-
-impl SyncLedger {
-    pub fn new() -> Self {
-        Self {
-            count: AtomicU64::new(1),
-            lock: ParkLock::new(),
-        }
-    }
-}
-
-impl Ledger for SyncLedger {
-    type Cookies = ParkLock;
-
-    fn cookie(&self) -> &Self::Cookies {
-        &self.lock
-    }
-
-    fn generation(&self) -> NonZeroU64 {
-        unsafe { NonZeroU64::new_unchecked(self.count.load(Ordering::Relaxed)) }
-    }
-
-    // SAFETY:
-    // 1. fetch_add() ensures the generation count increases
-    unsafe fn bump(this: NonNull<Self>) {
-        unsafe {
-            // SAFETY:
-            // 1. Guaranteed by caller
-            // 2. Guaranteed by caller
-            let this = this.as_ref();
-            this.count.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct SiloedLedger {
-    count: Cell<NonZeroU64>,
-    lock: Cell<u32>,
-    _marker: Marker,
-}
-
-impl Default for SiloedLedger {
-    fn default() -> Self {
-        Self {
-            count: Cell::new(unsafe { NonZeroU64::new_unchecked(1) }),
-            lock: Default::default(),
-            _marker: Default::default(),
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-#[repr(u32)]
-enum Marker {
-    #[default]
-    Marker = 1,
-}
-
-impl Ledger for SiloedLedger {
-    type Cookies = Cell<u32>;
-
-    fn cookie(&self) -> &Self::Cookies {
-        &self.lock
-    }
-
-    fn generation(&self) -> NonZeroU64 {
-        self.count.get()
-    }
-
-    // SAFETY:
-    // 1. Saturating add is used
-    unsafe fn bump(this: NonNull<Self>) {
-        unsafe {
-            // SAFETY:
-            // Guaranteed by caller
-            let this = this.as_ref();
-            let n = this.generation().get().saturating_add(1);
-            // SAFETY:
-            // Not possible for above calculation to result in zero
-            let n = NonZeroU64::new_unchecked(n);
-            this.count.set(n);
-        };
-    }
-}
+#[cfg(feature = "tokio")]
+pub mod sem;
+pub mod silo;
+pub mod sync;
 
 pub trait Ledger {
     type Cookies: CookieJar;
+    const LIFETIME_NAME: &'static str = "'_";
     fn cookie(&self) -> &Self::Cookies;
-    fn generation(&self) -> NonZeroU64;
+    fn reallocation(&self) -> NonZeroU64;
+
+    /// Bump the reallocation count of this ledger
+    ///
+    /// # Safety of implementation
+    /// 1. The value of [`.reallocations()`](Ledger::reallocations) MUST be either
+    /// increased or u64::MAX after this function returns.
+    unsafe fn bump_impl(&self);
 
     /// # Safety requirements
-    /// 1. `this` is convertible to a reference
-    /// 2. This function is only called once on this pointer
+    /// 1. This may not be called twice on the same pointer.
+    unsafe fn free(_this: NonNull<Self>) {}
+
+    fn read_failure() -> ! {
+        panic!("deadlock when acquiring read permissions")
+    }
+
+    fn write_failure() -> ! {
+        panic!("deadlock when acquiring write permissions")
+    }
+}
+
+pub trait LedgerExt: Ledger {
+    /// Bump the reallocation count of this ledger
     ///
     /// # Safety guarantees
-    /// 1. The value of `.generation()` will either be increased or u64::MAX after this function returns
-    unsafe fn bump(this: NonNull<Self>);
+    /// 1. The value of [`.reallocations()`](Ledger::reallocations) is either
+    /// increased or u64::MAX after this function returns.
+    fn bump(&self) {
+        unsafe {
+            self.bump_impl();
+        }
+
+        // SAFETY:
+        // 1. Guaranteed by implementation requirement of bump_impl
+    }
 }
+
+impl<L: Ledger> LedgerExt for L {}

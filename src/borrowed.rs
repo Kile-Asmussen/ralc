@@ -1,12 +1,12 @@
-use std::{mem::ManuallyDrop, num::NonZeroU64, ptr::NonNull};
+use std::{fmt, mem::ManuallyDrop, num::NonZeroU64, ptr::NonNull};
 
-use crate::{ReadRalc, WriteRalc, cookie::CookieJar, ledgers::Ledger};
+use crate::{RalcMut, RalcRef, cookie::CookieJar, ledgers::Ledger};
 
 mod _limit_visibility {
     use super::*;
 
     pub struct BorrowRalc<T, L: Ledger> {
-        generation: NonZeroU64,
+        reallocation: NonZeroU64,
         /// # Safety invariant:
         /// 1. Converitble to reference
         ledger: NonNull<L>,
@@ -25,12 +25,12 @@ mod _limit_visibility {
             data: NonNull<ManuallyDrop<T>>,
         ) -> Self {
             Self {
-                generation: unsafe {
+                reallocation: unsafe {
                     // SAFETY:
                     // 1. Guaranteed by caller
                     ledger.as_ref()
                 }
-                .generation(),
+                .reallocation(),
                 ledger,
                 data,
             }
@@ -42,8 +42,8 @@ mod _limit_visibility {
             unsafe { self.ledger.as_ref() }
         }
 
-        pub fn generation(&self) -> NonZeroU64 {
-            self.generation
+        pub fn reallocation(&self) -> NonZeroU64 {
+            self.reallocation
         }
 
         /// # Safety guarantees:
@@ -62,7 +62,7 @@ mod _limit_visibility {
     impl<T, L: Ledger> Clone for BorrowRalc<T, L> {
         fn clone(&self) -> Self {
             Self {
-                generation: self.generation,
+                reallocation: self.reallocation,
                 ledger: self.ledger,
                 data: self.data,
             }
@@ -75,42 +75,61 @@ mod _limit_visibility {
 pub use _limit_visibility::BorrowRalc;
 
 impl<T, L: Ledger> BorrowRalc<T, L> {
+    /// Check if this reference is stale, referencing an allocation that
+    /// has already been freed.
     pub fn check(&self) -> bool {
-        self.ledger().generation() == self.generation()
+        self.ledger().reallocation() == self.reallocation()
     }
 
-    pub fn read(&self) -> Option<ReadRalc<'_, T, L>> {
+    /// Get a readable reference through this borrow. Wait on access if possible.
+    ///
+    /// This method panics if the reference is stale or if waiting is not available.
+    pub fn read(&self) -> RalcRef<'_, T, L> {
         if !self.check() {
-            return None;
+            panic!("Attempt to read through stale borrowed ralc, remember to .check() first!");
         }
 
-        let cookie = self.ledger().cookie().read();
+        let cookie = self
+            .ledger()
+            .cookie()
+            .read()
+            .unwrap_or_else(|| L::read_failure());
 
-        Some(unsafe {
+        unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Cookie is generated just above
             // 3. Guaranteed directly
-            ReadRalc::from_parts(cookie, self.generation(), self.ledger_ptr(), self.data())
-        })
+            RalcRef::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
+        }
     }
 
-    pub fn write(&self) -> Option<WriteRalc<'_, T, L>> {
+    /// Get a writable reference through this borrow. Wait on access if possible.
+    ///
+    /// This method panics if the reference is stale or if waiting is not available.
+    pub fn write(&self) -> RalcMut<'_, T, L> {
         if !self.check() {
-            return None;
+            panic!("Attempt to write through stale borrowed ralc, remember to .check() first!");
         }
 
-        let cookie = self.ledger().cookie().write();
-        Some(unsafe {
+        let cookie = self
+            .ledger()
+            .cookie()
+            .write()
+            .unwrap_or_else(|| L::write_failure());
+
+        unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Created just above
             // 3. Guaranteed directly
-            WriteRalc::from_parts(cookie, self.generation(), self.ledger_ptr(), self.data())
-        })
+            RalcMut::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
+        }
     }
 
-    pub fn try_read(&self) -> Option<ReadRalc<'_, T, L>> {
+    /// Get a readable reference through this borrow. Returns `None` immediately if access
+    /// cannot be acquired.
+    pub fn try_read(&self) -> Option<RalcRef<'_, T, L>> {
         if !self.check() {
             return None;
         }
@@ -121,14 +140,16 @@ impl<T, L: Ledger> BorrowRalc<T, L> {
                 // 1. Guaranteed directly
                 // 2. Cookie is generated just above
                 // 3. Guaranteed directly
-                ReadRalc::from_parts(cookie, self.generation(), self.ledger_ptr(), self.data())
+                RalcRef::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
             })
         } else {
             None
         }
     }
 
-    pub fn try_write(&self) -> Option<WriteRalc<'_, T, L>> {
+    /// Get a writable reference through this borrow. Returns `None` immediately if access
+    /// cannot be acquired.
+    pub fn try_write(&self) -> Option<RalcMut<'_, T, L>> {
         if !self.check() {
             return None;
         }
@@ -139,10 +160,38 @@ impl<T, L: Ledger> BorrowRalc<T, L> {
                 // 1. Guaranteed directly
                 // 2. Created just above
                 // 3. Guaranteed directly
-                WriteRalc::from_parts(cookie, self.generation(), self.ledger_ptr(), self.data())
+                RalcMut::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
             })
         } else {
             None
+        }
+    }
+}
+
+impl<T: fmt::Debug, L: Ledger> fmt::Debug for BorrowRalc<T, L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            f.debug_tuple("BorrowRalc")
+        } else {
+            f.debug_tuple(&format!("&{} ralc", L::LIFETIME_NAME))
+        }
+        .field(
+            self.try_read()
+                .as_deref()
+                .map(|x| x as &dyn fmt::Debug)
+                .unwrap_or(&std::any::type_name::<T>() as &dyn fmt::Debug),
+        )
+        .finish()
+    }
+}
+
+impl<T: fmt::Display, L: Ledger> fmt::Display for BorrowRalc<T, L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let marker = if f.alternate() { " (borrowed)" } else { "" };
+        if let Some(r) = self.try_read() {
+            write!(f, "{}{}", r, marker)
+        } else {
+            write!(f, "<unavailable>{}", marker)
         }
     }
 }

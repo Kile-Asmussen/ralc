@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     marker::PhantomData,
     mem::ManuallyDrop,
     num::NonZeroU64,
@@ -9,17 +10,17 @@ use std::{
 use crate::{
     cookie::{CookieJar, WriteCookie},
     ledgers::Ledger,
-    read::ReadRalc,
+    ref_::RalcRef,
 };
 
 mod _limit_visibility {
     use super::*;
 
-    pub struct WriteRalc<'a, T, L: Ledger> {
+    pub struct RalcMut<'a, T, L: Ledger> {
         /// ## Safety invariants:
         /// 1. This read token was created from [`Self::ledger`]'s `.cookie()` or `.upgrade()` of one
         cookie: ManuallyDrop<<L::Cookies as CookieJar>::WriteToken<'a>>,
-        generation: NonZeroU64,
+        reallocation: NonZeroU64,
         /// ## Safety invariants:
         /// 1. Convertible to a mutalbe reference
         ledger: NonNull<L>,
@@ -29,7 +30,7 @@ mod _limit_visibility {
         _phantom: PhantomData<&'a mut T>,
     }
 
-    impl<'a, T, L: Ledger> WriteRalc<'a, T, L> {
+    impl<'a, T, L: Ledger> RalcMut<'a, T, L> {
         /// # Safety requirements
         ///
         /// 1. `ledger` must be convertible to a mutable reference
@@ -37,7 +38,7 @@ mod _limit_visibility {
         /// 3. `data` must be have been created from a box and be convertible to a mutable reference
         pub(crate) unsafe fn from_parts(
             cookie: <L::Cookies as CookieJar>::WriteToken<'a>,
-            generation: NonZeroU64,
+            reallocation: NonZeroU64,
             ledger: NonNull<L>,
             data: NonNull<ManuallyDrop<T>>,
         ) -> Self {
@@ -51,13 +52,13 @@ mod _limit_visibility {
                 // SAFETY:
                 // 1. Guaranteed by caller
                 data,
-                generation,
+                reallocation,
                 _phantom: PhantomData,
             }
         }
 
-        pub(crate) fn generation(&self) -> NonZeroU64 {
-            self.generation
+        pub(crate) fn reallocation(&self) -> NonZeroU64 {
+            self.reallocation
         }
 
         /// # Safety guarantees:
@@ -101,9 +102,9 @@ mod _limit_visibility {
     }
 }
 
-pub use _limit_visibility::WriteRalc;
+pub use _limit_visibility::RalcMut;
 
-impl<'a, T, L: Ledger> WriteRalc<'a, T, L> {
+impl<'a, T, L: Ledger> RalcMut<'a, T, L> {
     pub(crate) fn ledger(&self) -> &L {
         unsafe {
             // SAFETY:
@@ -112,8 +113,8 @@ impl<'a, T, L: Ledger> WriteRalc<'a, T, L> {
         }
     }
 
-    pub fn into_read(mut self) -> ReadRalc<'a, T, L> {
-        let generation = self.generation();
+    pub fn into_read(mut self) -> RalcRef<'a, T, L> {
+        let reallocation = self.reallocation();
         let ledger = self.ledger_ptr();
         let data = self.data();
         let cookie = unsafe {
@@ -127,12 +128,12 @@ impl<'a, T, L: Ledger> WriteRalc<'a, T, L> {
             // SAFETY:
             // 1. Given by safety guarantee
             // 2. Given by safety guarantee
-            ReadRalc::from_parts(cookie.downgrade(), generation, ledger, data)
+            RalcRef::from_parts(cookie.downgrade(), reallocation, ledger, data)
         }
     }
 }
 
-impl<'a, T, L: Ledger> Deref for WriteRalc<'a, T, L> {
+impl<'a, T, L: Ledger> Deref for RalcMut<'a, T, L> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -144,7 +145,7 @@ impl<'a, T, L: Ledger> Deref for WriteRalc<'a, T, L> {
     }
 }
 
-impl<'a, T, L: Ledger> DerefMut for WriteRalc<'a, T, L> {
+impl<'a, T, L: Ledger> DerefMut for RalcMut<'a, T, L> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe {
             // SAFETY:
@@ -154,22 +155,40 @@ impl<'a, T, L: Ledger> DerefMut for WriteRalc<'a, T, L> {
     }
 }
 
-impl<'a, T, L: Ledger> Drop for WriteRalc<'a, T, L> {
+impl<'a, T, L: Ledger> Drop for RalcMut<'a, T, L> {
     fn drop(&mut self) {
-        if self.ledger().generation() != self.generation() {
+        if self.ledger().reallocation() != self.reallocation() {
             unsafe {
                 // SAFETY:
                 // 1. Directly guaranteed
                 let mut slot = *Box::from_raw(self.data().as_ptr());
+
                 // SAFETY:
                 // 1. This is `drop`
                 ManuallyDrop::drop(&mut slot);
+
+                // SAFETY:
+                // 1. This is `drop`
+                L::free(self.ledger_ptr());
             }
         }
+
         unsafe {
             // SAFETY:
             // 1. This is `drop`
             ManuallyDrop::drop(self.cookie_mut());
         }
+    }
+}
+
+impl<'a, T: fmt::Debug, L: Ledger> fmt::Debug for RalcMut<'a, T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.deref(), f)
+    }
+}
+
+impl<'a, T: fmt::Display, L: Ledger> fmt::Display for RalcMut<'a, T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.deref(), f)
     }
 }

@@ -169,6 +169,7 @@ impl<'a, T, L: Ledger> Drop for RalcMut<'a, T, L> {
 
                 // SAFETY:
                 // 1. This is `drop`
+                // 2. Guaranteed directly
                 L::free(self.ledger_ptr());
             }
         }

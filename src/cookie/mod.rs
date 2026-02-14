@@ -1,9 +1,6 @@
 pub mod cell;
 pub mod parking_lot;
 
-#[cfg(feature = "tokio")]
-pub mod tokio_semaphore;
-
 /// A cookie representing permission to take shared references to a resource.
 pub trait ReadCookie: Clone {
     type UpgradesTo: WriteCookie;
@@ -20,7 +17,7 @@ pub trait WriteCookie {
     fn downgrade(self) -> Self::DowngradesTo;
 }
 
-pub trait CookieJar {
+pub trait CookieJar: Default {
     type ReadToken<'a>: ReadCookie<UpgradesTo = Self::WriteToken<'a>>;
     type WriteToken<'a>: WriteCookie<DowngradesTo = Self::ReadToken<'a>>;
 

@@ -55,3 +55,9 @@ impl<T: Send + Sync> Ralc<T, GlobalLedger> {
         Self::Owned(OwnedRalc::new_global(data))
     }
 }
+
+#[test]
+fn send_sync() {
+    use assert_impl::assert_impl;
+    assert_impl!(Send: OwnedRalc<i32, GlobalLedger>);
+}

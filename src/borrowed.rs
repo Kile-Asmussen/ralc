@@ -15,6 +15,8 @@ mod _limit_visibility {
         data: NonNull<ManuallyDrop<T>>,
     }
 
+    unsafe impl<T: Sync, L: Sync + Ledger> Send for BorrowRalc<T, L> {}
+
     impl<T, L: Ledger> BorrowRalc<T, L> {
         /// # Safety
         ///

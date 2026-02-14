@@ -4,11 +4,11 @@ use crate::{
     OwnedRalc, Ralc,
     allocators::{AllocatedLedger, LedgerAllocator},
     ledgerbooks::RetainingBook,
-    ledgers::sem::SemLedger,
+    ledgers::silo::SiloedLedger,
 };
 
 tokio::task_local! {
-    static RALC: RefCell<RetainingBook<SemLedger>>;
+    static RALC: RefCell<RetainingBook<SiloedLedger>>;
 }
 
 pub struct TaskLocalAllocator;
@@ -22,8 +22,8 @@ pub trait FutureExt: Future + Sized {
 }
 
 impl LedgerAllocator for TaskLocalAllocator {
-    type WrappedLedger = SemLedger;
-    type Allocator = RetainingBook<SemLedger>;
+    type WrappedLedger = SiloedLedger;
+    type Allocator = RetainingBook<SiloedLedger>;
 
     fn with<X, F: FnOnce(&mut Self::Allocator) -> X>(scope: F) -> X {
         RALC.with(|rc| scope(rc.borrow_mut().deref_mut()))

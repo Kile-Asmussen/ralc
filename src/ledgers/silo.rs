@@ -9,6 +9,12 @@ pub struct SiloedLedger {
     _marker: Marker,
 }
 
+#[test]
+fn send_sync() {
+    use assert_impl::assert_impl;
+    assert_impl!(!Sync: SiloedLedger);
+}
+
 impl Default for SiloedLedger {
     fn default() -> Self {
         Self {

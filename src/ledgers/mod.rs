@@ -2,8 +2,6 @@ use std::{num::NonZeroU64, ptr::NonNull};
 
 use crate::cookie::CookieJar;
 
-#[cfg(feature = "tokio")]
-pub mod sem;
 pub mod silo;
 pub mod sync;
 
@@ -22,6 +20,7 @@ pub trait Ledger {
 
     /// # Safety requirements
     /// 1. This may not be called twice on the same pointer.
+    /// 2. The pointer must be convertible to a reference.
     unsafe fn free(_this: NonNull<Self>) {}
 
     fn read_failure() -> ! {

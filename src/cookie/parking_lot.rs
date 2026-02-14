@@ -6,8 +6,8 @@ use assert_impl::assert_impl;
 #[repr(transparent)]
 pub struct ParkLock(RwLock);
 
-impl ParkLock {
-    pub(crate) fn new() -> Self {
+impl Default for ParkLock {
+    fn default() -> Self {
         ParkLock(RwLock::INIT)
     }
 }

@@ -50,21 +50,4 @@ impl<L: Ledger + Default> LedgerBook<L> for LeakyBook<L> {
             self.chunk_size = self.max_chunk_size;
         }
     }
-
-    fn allocate(&mut self) -> NonNull<L> {
-        if let Some(x) = self.next_free() {
-            return x;
-        } else {
-            let size = self.chunk_size();
-            let mut ledgers = Vec::with_capacity(size);
-            for _ in 0..size {
-                ledgers.push(<L>::default())
-            }
-            self.bump_chunk_size();
-
-            self.extend_free_list(ledgers);
-
-            return self.next_free().unwrap();
-        }
-    }
 }

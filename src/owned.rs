@@ -27,6 +27,8 @@ mod _limit_visibility {
         data: NonNull<ManuallyDrop<T>>,
     }
 
+    unsafe impl<T: Send, L: Ledger + Sync> Send for OwnedRalc<T, L> {}
+
     impl<T, L: Ledger> OwnedRalc<T, L> {
         /// # Safety requirements
         ///

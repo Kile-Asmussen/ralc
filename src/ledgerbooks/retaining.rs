@@ -18,7 +18,7 @@ impl<L: Ledger> RetainingBook<L> {
     }
 }
 
-impl<L: Ledger + Default> LedgerBook<L> for RetainingBook<L> {
+impl<L: Ledger> LedgerBook<L> for RetainingBook<L> {
     unsafe fn deallocate(&mut self, ledger: NonNull<L>) {
         self.free.push(ledger);
     }

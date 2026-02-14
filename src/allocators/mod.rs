@@ -4,9 +4,14 @@ use crate::{ledgerbooks::LedgerBook, ledgers::Ledger};
 
 mod global;
 pub use global::{GlobalAllocator, GlobalLedger};
+mod pool;
+pub use pool::{PoolAllocator, PoolLedger};
 #[cfg(feature = "tokio")]
 mod task_local;
+#[cfg(feature = "tokio")]
+pub use task_local::{TaskLocalAllocator, TaskLocalLedger};
 mod thread_local;
+pub use thread_local::{ThreadLocalAllocator, ThreadLocalLedger};
 
 pub trait LedgerAllocator {
     type WrappedLedger: Ledger + Default;
@@ -20,7 +25,7 @@ pub trait LedgerAllocator {
         Self::with(|a| unsafe {
             // SAFETY:
             // 1. Self-evident
-            AllocatedLedger::from_inner_ptr(a.allocate())
+            AllocatedLedger::from_inner_ptr(a.allocate(Default::default))
         })
     }
 

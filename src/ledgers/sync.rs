@@ -11,9 +11,8 @@ pub struct SyncLedger {
 }
 
 #[test]
-fn syncledger_is_sync() {
+fn send_sync() {
     use assert_impl::assert_impl;
-
     assert_impl!(Sync: SyncLedger);
 }
 
@@ -21,16 +20,7 @@ impl Default for SyncLedger {
     fn default() -> Self {
         Self {
             count: AtomicU64::new(1),
-            lock: ParkLock::new(),
-        }
-    }
-}
-
-impl SyncLedger {
-    pub fn new() -> Self {
-        Self {
-            count: AtomicU64::new(1),
-            lock: ParkLock::new(),
+            lock: ParkLock::default(),
         }
     }
 }

@@ -5,15 +5,21 @@ use crate::{
     allocators::pool::_limit_visibility::PoolAllocatedLedger,
     cookie::CookieJar,
     ledgerbooks::{LedgerBook, RetainingBook},
-    ledgers::Ledger,
+    ledgers::{Ledger, silo::SiloedLedger},
 };
 
-pub struct PoolAllocator<L: Ledger + Default + 'static> {
+pub struct PoolAllocator<L: Ledger + Default + 'static = SiloedLedger> {
     cookie: L::Cookies,
     book: UnsafeCell<RetainingBook<PoolAllocatedLedger<L>>>,
 }
 
 unsafe impl<C: Sync, L: Ledger<Cookies = C> + Default> Sync for PoolAllocator<L> {}
+
+impl PoolAllocator<SiloedLedger> {
+    pub fn new_local() -> Self {
+        Self::new()
+    }
+}
 
 impl<L: Ledger + Default> PoolAllocator<L> {
     pub fn new() -> Self {
@@ -23,13 +29,42 @@ impl<L: Ledger + Default> PoolAllocator<L> {
         }
     }
 
+    #[cfg(test)]
+    fn peek_a_book<X>(&self, f: impl FnOnce(&RetainingBook<PoolAllocatedLedger<L>>) -> X) -> X {
+        let _cookie = self.cookie.read().unwrap_or_else(|| L::read_failure());
+        let book = self.book.get();
+        unsafe {
+            // SAFETY:
+            // 1. The cookie ensures we have read permission
+            // 2. Guaranteed by invariant on UnsafeCell
+            let book = book.as_ref().unwrap();
+
+            f(book)
+        }
+    }
+
+    #[cfg(test)]
+    pub fn free_count(&self) -> usize {
+        self.peek_a_book(|b| b.free_count())
+    }
+
+    #[cfg(test)]
+    pub fn expansions(&self) -> usize {
+        self.peek_a_book(|b| b.expansions())
+    }
+
+    #[cfg(test)]
+    pub fn total_allocations(&self) -> usize {
+        self.peek_a_book(|b| b.total_allocations())
+    }
+
     pub fn ralc<'a, T>(&'a self, value: T) -> OwnedRalc<T, PoolLedger<'a, L>> {
         unsafe {
             // SAFETY:
             // 1. Box is never null
             let data = NonNull::new_unchecked(Box::into_raw(Box::new(ManuallyDrop::new(value))));
 
-            OwnedRalc::from_parts(self.alloc_ledger(), data)
+            OwnedRalc::from_raw_parts(self.alloc_ledger(), data)
         }
     }
 

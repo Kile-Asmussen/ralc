@@ -33,7 +33,7 @@ impl<T> OwnedRalc<T, ThreadLocalLedger> {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Self-evident
-            Self::from_parts(
+            Self::from_raw_parts(
                 ThreadLocalAllocator::alloc(),
                 // SAFETY:
                 // 1. Guaranteed by Box

@@ -1,6 +1,6 @@
-use std::ptr::NonNull;
+use std::{mem::ManuallyDrop, ptr::NonNull};
 
-use crate::{ledgerbooks::LedgerBook, ledgers::Ledger};
+use crate::{OwnedRalc, Ralc, ledgerbooks::LedgerBook, ledgers::Ledger};
 
 mod global;
 pub use global::{GlobalAllocator, GlobalLedger};
@@ -21,6 +21,9 @@ pub trait LedgerAllocator {
 
     fn with<X, F: FnOnce(&mut Self::Allocator) -> X>(scope: F) -> X;
 
+    /// # Safety guarantee
+    /// 1. Returned pointer is valid as a reference
+    /// 2. Ledger has a reallocation count less thant `NonZeroU64::MAX`
     fn alloc() -> NonNull<AllocatedLedger<Self>> {
         Self::with(|a| unsafe {
             // SAFETY:
@@ -39,6 +42,49 @@ pub trait LedgerAllocator {
             // 2. Guaranteed by caller
             a.deallocate(AllocatedLedger::into_inner_ptr(ledger))
         })
+    }
+
+    #[cfg(test)]
+    fn expansions() -> usize {
+        Self::with(|a| a.expansions())
+    }
+
+    #[cfg(test)]
+    fn total_allocations() -> usize {
+        Self::with(|a| a.total_allocations())
+    }
+
+    #[cfg(test)]
+    fn free_count() -> usize {
+        Self::with(|a| a.free_count())
+    }
+
+    #[cfg(test)]
+    fn reset() {
+        Self::with(|a| a.reset());
+    }
+}
+
+impl<T, L: Ledger> OwnedRalc<T, L> {
+    fn new<A: LedgerAllocator>(data: T) -> OwnedRalc<T, AllocatedLedger<A>> {
+        unsafe {
+            // SAFETY:
+            // 1. Directly guaranteed
+            // 2. Self evident
+            // 3. Directly guaranteed
+            OwnedRalc::from_raw_parts(
+                A::alloc(),
+                // SAFETY:
+                // 1. Box::into_raw never returns null
+                NonNull::new_unchecked(Box::into_raw(Box::new(ManuallyDrop::new(data)))),
+            )
+        }
+    }
+}
+
+impl<T, L: Ledger> Ralc<T, L> {
+    pub fn new<A: LedgerAllocator>(data: T) -> Ralc<T, AllocatedLedger<A>> {
+        Ralc::Owned(OwnedRalc::<T, L>::new::<A>(data))
     }
 }
 

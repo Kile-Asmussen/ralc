@@ -35,7 +35,7 @@ mod _limit_visibility {
         /// 1. `ledger` must be convertible to a reference
         /// 2. `data` must be have been created from a box
         /// 3. ledger has a [`.reallocation()`](Ledger::reallocation) count that is not `NonZeroU64::MAX`
-        pub(crate) unsafe fn from_parts(
+        pub(crate) unsafe fn from_raw_parts(
             ledger: NonNull<L>,
             data: NonNull<ManuallyDrop<T>>,
         ) -> Self {

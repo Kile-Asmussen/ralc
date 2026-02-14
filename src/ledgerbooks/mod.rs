@@ -7,6 +7,12 @@ mod retaining;
 pub use leaking::LeakyBook;
 pub use retaining::RetainingBook;
 
+#[cfg(not(test))]
+const CHUNK_SIZE: usize = 1024;
+
+#[cfg(test)]
+const CHUNK_SIZE: usize = 16;
+
 pub trait LedgerBook<L: Ledger> {
     /// # Safety requirements
     /// 1. `ledger` is a return from next_free
@@ -38,4 +44,16 @@ pub trait LedgerBook<L: Ledger> {
             return self.next_free().unwrap();
         }
     }
+
+    #[cfg(test)]
+    fn expansions(&self) -> usize;
+
+    #[cfg(test)]
+    fn total_allocations(&self) -> usize;
+
+    #[cfg(test)]
+    fn free_count(&self) -> usize;
+
+    #[cfg(test)]
+    fn reset(&mut self);
 }

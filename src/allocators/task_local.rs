@@ -15,7 +15,7 @@ pub struct TaskLocalAllocator;
 
 #[allow(dead_code)]
 pub trait FutureExt: Future + Sized {
-    async fn ralc(self) -> Self::Output {
+    async fn with_ralcs(self) -> Self::Output {
         RALC.sync_scope(RefCell::new(RetainingBook::new()), move || self)
             .await
     }
@@ -39,7 +39,7 @@ impl<T> OwnedRalc<T, TaskLocalLedger> {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Self-evident
-            Self::from_parts(
+            Self::from_raw_parts(
                 TaskLocalAllocator::alloc(),
                 // SAFETY:
                 // 1. Guaranteed by Box

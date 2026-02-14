@@ -1,7 +1,6 @@
-use std::{cell::RefCell, mem::ManuallyDrop, ops::DerefMut, ptr::NonNull};
+use std::{cell::RefCell, ops::DerefMut};
 
 use crate::{
-    OwnedRalc, Ralc,
     allocators::{AllocatedLedger, LedgerAllocator},
     ledgerbooks::RetainingBook,
     ledgers::silo::SiloedLedger,
@@ -30,27 +29,4 @@ impl LedgerAllocator for TaskLocalAllocator {
     }
 }
 
-pub type TaskLocalLedger = AllocatedLedger<TaskLocalAllocator>;
-
-impl<T> OwnedRalc<T, TaskLocalLedger> {
-    pub fn new_task_local(data: T) -> Self {
-        let data = Box::new(ManuallyDrop::new(data));
-        unsafe {
-            // SAFETY:
-            // 1. Guaranteed directly
-            // 2. Self-evident
-            Self::from_raw_parts(
-                TaskLocalAllocator::alloc(),
-                // SAFETY:
-                // 1. Guaranteed by Box
-                NonNull::new_unchecked(Box::into_raw(data)),
-            )
-        }
-    }
-}
-
-impl<T> Ralc<T, TaskLocalLedger> {
-    pub fn new_task_local(data: T) -> Self {
-        Self::Owned(OwnedRalc::new_task_local(data))
-    }
-}
+pub type TaskLocal = AllocatedLedger<TaskLocalAllocator>;

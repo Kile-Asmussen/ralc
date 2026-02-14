@@ -24,9 +24,9 @@ impl LedgerAllocator for ThreadLocalAllocator {
     }
 }
 
-pub type ThreadLocalLedger = AllocatedLedger<ThreadLocalAllocator>;
+pub type ThreadLocal = AllocatedLedger<ThreadLocalAllocator>;
 
-impl<T> OwnedRalc<T, ThreadLocalLedger> {
+impl<T> OwnedRalc<T, ThreadLocal> {
     pub fn new_thread_local(data: T) -> Self {
         let data = Box::new(ManuallyDrop::new(data));
         unsafe {
@@ -43,7 +43,7 @@ impl<T> OwnedRalc<T, ThreadLocalLedger> {
     }
 }
 
-impl<T> Ralc<T, ThreadLocalLedger> {
+impl<T> Ralc<T, ThreadLocal> {
     pub fn new_thread_local(data: T) -> Self {
         Self::Owned(OwnedRalc::new_thread_local(data))
     }

@@ -58,7 +58,7 @@ impl<L: Ledger + Default> PoolAllocator<L> {
         self.peek_a_book(|b| b.total_allocations())
     }
 
-    pub fn ralc<'a, T>(&'a self, value: T) -> OwnedRalc<T, PoolLedger<'a, L>> {
+    pub fn alc<'a, T>(&'a self, value: T) -> OwnedRalc<T, PoolLedger<'a, L>> {
         unsafe {
             // SAFETY:
             // 1. Box is never null

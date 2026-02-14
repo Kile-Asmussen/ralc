@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 
 use crate::{
     OwnedRalc,
-    allocators::{GlobalAllocator, LedgerAllocator, PoolAllocator},
+    allocators::{AllocatedLedger, GlobalAllocator, LedgerAllocator, PoolAllocator},
     cookie::CookieJar,
     ledgers::Ledger,
 };
@@ -13,16 +13,16 @@ mod global;
 mod local;
 mod pool;
 
-fn allocation_count_for<A: LedgerAllocator>() {
-    allocation_count(
-        OwnedRalc::new_thread_local,
+fn predictable_allocation_count_for<A: LedgerAllocator>() {
+    predictable_allocation_count(
+        OwnedRalc::<_, AllocatedLedger<A>>::new,
         A::reset,
         A::total_allocations,
         A::free_count,
     );
 }
 
-fn allocation_count<L: Ledger>(
+fn predictable_allocation_count<L: Ledger>(
     new: impl Fn(i32) -> OwnedRalc<i32, L>,
     reset: impl Fn(),
     total_allocations: impl Fn() -> usize,
@@ -30,15 +30,40 @@ fn allocation_count<L: Ledger>(
 ) {
     reset();
     let mut vec = vec![];
-    let total = total_allocations();
     for i in 0..1000 {
         vec.push(new(i))
     }
-    assert_eq!(total + 1000, total_allocations());
+    assert_eq!(1000, total_allocations());
     for or in vec {
         test_write_read(or);
     }
-    assert_eq!(free_count(), 1000);
+    assert!(free_count() >= 1000);
+}
+
+fn borrows_dont_allocate_for<A: LedgerAllocator>() {
+    borrows_dont_allocate(
+        OwnedRalc::<_, AllocatedLedger<A>>::new,
+        A::reset,
+        A::total_allocations,
+    );
+}
+
+fn borrows_dont_allocate<L: Ledger>(
+    new: impl Fn(i32) -> OwnedRalc<i32, L>,
+    reset: impl Fn(),
+    total_allocations: impl Fn() -> usize,
+) {
+    reset();
+    let owned = new(0);
+    let mut vec = vec![];
+    for _ in 0..1000 {
+        vec.push(owned.borrow());
+    }
+    assert_eq!(1, total_allocations());
+    for or in vec {
+        *or.write() += 1;
+    }
+    assert_eq!(*owned.read(), 1000);
 }
 
 fn test_into_inner(owned: OwnedRalc<i32, impl Ledger>) {

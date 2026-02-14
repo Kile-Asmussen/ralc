@@ -21,7 +21,7 @@ mod _limit_visibility {
         /// # Safety
         ///
         /// 1. `ledger` must be convertible to a reference
-        /// 2. `data` must be have been created from `Box::leak`
+        /// 2. `data` must be have been created from `Box`
         pub(crate) unsafe fn from_parts(
             ledger: NonNull<L>,
             data: NonNull<ManuallyDrop<T>>,

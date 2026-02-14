@@ -3,15 +3,15 @@ use std::{mem::ManuallyDrop, ptr::NonNull};
 use crate::{OwnedRalc, Ralc, ledgerbooks::LedgerBook, ledgers::Ledger};
 
 mod global;
-pub use global::{GlobalAllocator, GlobalLedger};
+pub use global::{Global, GlobalAllocator};
 mod pool;
 pub use pool::{PoolAllocator, PoolLedger};
 #[cfg(feature = "tokio")]
 mod task_local;
 #[cfg(feature = "tokio")]
-pub use task_local::{TaskLocalAllocator, TaskLocalLedger};
+pub use task_local::{TaskLocal, TaskLocalAllocator};
 mod thread_local;
-pub use thread_local::{ThreadLocalAllocator, ThreadLocalLedger};
+pub use thread_local::{ThreadLocal, ThreadLocalAllocator};
 
 pub trait LedgerAllocator {
     type WrappedLedger: Ledger + Default;
@@ -65,8 +65,8 @@ pub trait LedgerAllocator {
     }
 }
 
-impl<T, L: Ledger> OwnedRalc<T, L> {
-    fn new<A: LedgerAllocator>(data: T) -> OwnedRalc<T, AllocatedLedger<A>> {
+impl<T, A: LedgerAllocator> OwnedRalc<T, AllocatedLedger<A>> {
+    pub fn new(data: T) -> OwnedRalc<T, AllocatedLedger<A>> {
         unsafe {
             // SAFETY:
             // 1. Directly guaranteed
@@ -82,9 +82,9 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
     }
 }
 
-impl<T, L: Ledger> Ralc<T, L> {
-    pub fn new<A: LedgerAllocator>(data: T) -> Ralc<T, AllocatedLedger<A>> {
-        Ralc::Owned(OwnedRalc::<T, L>::new::<A>(data))
+impl<T, A: LedgerAllocator> Ralc<T, AllocatedLedger<A>> {
+    pub fn new(data: T) -> Ralc<T, AllocatedLedger<A>> {
+        Ralc::Owned(OwnedRalc::new(data))
     }
 }
 

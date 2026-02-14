@@ -1,9 +1,7 @@
-use std::{mem::ManuallyDrop, ptr::NonNull};
-
 use parking_lot::Mutex;
 
 use crate::{
-    OwnedRalc, Ralc,
+    OwnedRalc,
     allocators::{AllocatedLedger, LedgerAllocator},
     ledgerbooks::LeakyBook,
     ledgers::sync::SyncLedger,
@@ -23,14 +21,14 @@ impl LedgerAllocator for GlobalAllocator {
     const LIFETIME_NAME: &'static str = "'static";
 }
 
-pub type GlobalLedger = AllocatedLedger<GlobalAllocator>;
+pub type Global = AllocatedLedger<GlobalAllocator>;
 
-impl<T: Send + Sync> OwnedRalc<T, GlobalLedger> {
+impl<T> OwnedRalc<T, Global> {
     #[cfg(test)]
-    pub fn global_ledger(&self) -> &'static GlobalLedger {
+    pub fn global_ledger(&self) -> &'static Global {
         unsafe {
             // SAFETY:
-            // 1. Guaranteed by GlobalAllocator's data existing for the static lifetime
+            // 1. Global ledgers are by nature, static
             self.ledger_ptr().as_ref()
         }
     }
@@ -38,6 +36,7 @@ impl<T: Send + Sync> OwnedRalc<T, GlobalLedger> {
 
 #[test]
 fn send_sync() {
+    use crate::OwnedRalc;
     use assert_impl::assert_impl;
-    assert_impl!(Send: OwnedRalc<i32, GlobalLedger>);
+    assert_impl!(Send: OwnedRalc<i32, Global>);
 }

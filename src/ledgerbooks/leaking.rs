@@ -29,6 +29,12 @@ impl<L: Ledger + Default + 'static> LeakyBook<L> {
     }
 }
 
+#[cfg_attr(miri, ignore)]
+#[inline]
+fn leak_vec<T>(vec: Vec<T>) -> &'static [T] {
+    Vec::leak(vec)
+}
+
 impl<L: Ledger + Default> LedgerBook<L> for LeakyBook<L> {
     unsafe fn deallocate(&mut self, ledger: NonNull<L>) {
         let ledger = unsafe {
@@ -47,7 +53,7 @@ impl<L: Ledger + Default> LedgerBook<L> for LeakyBook<L> {
         {
             self.expansions += 1;
         }
-        self.free.extend(Vec::leak(vec).iter())
+        self.free.extend(leak_vec(vec).iter())
     }
 
     fn next_free(&mut self) -> Option<NonNull<L>> {

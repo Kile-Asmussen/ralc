@@ -3,13 +3,13 @@ use crate::allocators::ThreadLocalAllocator;
 use super::*;
 
 #[test]
-fn predicatble_allocation_count_local() {
-    allocation_count(
-        OwnedRalc::new_thread_local,
-        ThreadLocalAllocator::reset,
-        ThreadLocalAllocator::total_allocations,
-        ThreadLocalAllocator::free_count,
-    );
+fn predicatble_allocation_count() {
+    predictable_allocation_count_for::<ThreadLocalAllocator>();
+}
+
+#[test]
+fn borrows_dont_allocate() {
+    borrows_dont_allocate_for::<ThreadLocalAllocator>();
 }
 
 #[test]

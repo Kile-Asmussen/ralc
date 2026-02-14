@@ -20,6 +20,7 @@ pub trait LedgerBook<L: Ledger> {
     unsafe fn deallocate(&mut self, ledger: NonNull<L>);
 
     fn extend_free_list(&mut self, vec: Vec<L>);
+
     fn next_free(&mut self) -> Option<NonNull<L>>;
 
     fn chunk_size(&self) -> usize {

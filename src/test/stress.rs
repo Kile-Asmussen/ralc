@@ -1,6 +1,6 @@
 use std::time::Instant;
 #[cfg(feature = "bumpalo")]
-use std::{cell::RefCell, ops::DerefMut, time::Instant};
+use std::{cell::RefCell, ops::DerefMut};
 
 #[cfg(feature = "bumpalo")]
 use parking_lot::Mutex;
@@ -10,6 +10,8 @@ use crate::allocators::GlobalAllocator;
 #[cfg(feature = "bumpalo")]
 use crate::allocators::GlobalAllocator;
 #[cfg(feature = "bumpalo")]
+use crate::ledgerbooks::{LeakyBook, RetainingBook};
+#[cfg(feature = "bumpalo")]
 use crate::ledgers::{silo::SiloedLedger, sync::SyncLedger};
 use crate::{
     OwnedRalc,
@@ -17,7 +19,11 @@ use crate::{
     test::MUTEX,
 };
 
+#[cfg(not(miri))]
 const N: usize = 10_000_000;
+
+#[cfg(miri)]
+const N: usize = 100;
 
 #[test]
 #[cfg(feature = "bumpalo")]

@@ -31,6 +31,41 @@ pub enum Ralc<T, L: Ledger> {
     Owned(OwnedRalc<T, L>),
 }
 
+impl<T, L: Ledger> From<BorrowRalc<T, L>> for Ralc<T, L> {
+    fn from(value: BorrowRalc<T, L>) -> Self {
+        Self::Borrow(value)
+    }
+}
+
+impl<T, L: Ledger> From<OwnedRalc<T, L>> for Ralc<T, L> {
+    fn from(value: OwnedRalc<T, L>) -> Self {
+        Self::Owned(value)
+    }
+}
+
+impl<T, L: Ledger> Clone for Ralc<T, L> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Borrow(borrow_ralc) => Self::Borrow(*borrow_ralc),
+            Self::Owned(owned_ralc) => Self::Borrow(owned_ralc.borrow()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum NoAccess {
+    /// Reference is currently unavailable due to an active lock.
+    Blocked,
+    /// Reference is stale.
+    Stale,
+    /// Reference is currently unavailable due to an active lock,
+    /// and a waiting operation was requested which would deadlock.
+    Deadlock,
+}
+
+pub type Result<T> = std::result::Result<T, NoAccess>;
+
 impl<T, L: Ledger> Ralc<T, L> {
     pub fn take(&mut self) -> Self {
         let mut res = self.clone();
@@ -52,53 +87,32 @@ impl<T, L: Ledger> Ralc<T, L> {
         }
     }
 
-    pub fn try_read(&self) -> Option<RalcRef<'_, T, L>> {
+    pub fn try_read(&self) -> Result<RalcRef<'_, T, L>> {
         match self {
             Self::Borrow(borrow_ralc) => borrow_ralc.try_read(),
             Self::Owned(owned_ralc) => owned_ralc.try_read(),
         }
     }
 
-    pub fn try_write(&self) -> Option<RalcMut<'_, T, L>> {
+    pub fn try_write(&self) -> Result<RalcMut<'_, T, L>> {
         match self {
             Self::Borrow(borrow_ralc) => borrow_ralc.try_write(),
             Self::Owned(owned_ralc) => owned_ralc.try_write(),
         }
     }
 
-    pub fn read(&self) -> RalcRef<'_, T, L> {
+    pub fn read(&self) -> Result<RalcRef<'_, T, L>> {
         match self {
             Self::Borrow(borrow_ralc) => borrow_ralc.read(),
             Self::Owned(owned_ralc) => owned_ralc.read(),
         }
     }
 
-    pub fn write(&self) -> RalcMut<'_, T, L> {
+    pub fn write(&self) -> Result<RalcMut<'_, T, L>> {
         match self {
             Self::Borrow(borrow_ralc) => borrow_ralc.write(),
             Self::Owned(owned_ralc) => owned_ralc.write(),
         }
-    }
-}
-
-impl<T, L: Ledger> Clone for Ralc<T, L> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Borrow(borrow_ralc) => Self::Borrow(*borrow_ralc),
-            Self::Owned(owned_ralc) => Self::Borrow(owned_ralc.borrow()),
-        }
-    }
-}
-
-impl<T, L: Ledger> From<OwnedRalc<T, L>> for Ralc<T, L> {
-    fn from(value: OwnedRalc<T, L>) -> Self {
-        Ralc::Owned(value)
-    }
-}
-
-impl<T, L: Ledger> From<BorrowRalc<T, L>> for Ralc<T, L> {
-    fn from(value: BorrowRalc<T, L>) -> Self {
-        Ralc::Borrow(value)
     }
 }
 

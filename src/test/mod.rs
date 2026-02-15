@@ -61,9 +61,9 @@ fn borrows_dont_allocate<L: Ledger>(
     }
     assert_eq!(1, total_allocations());
     for or in vec {
-        *or.write() += 1;
+        *or.write().unwrap() += 1;
     }
-    assert_eq!(*owned.read(), 1000);
+    assert_eq!(*owned.read().unwrap(), 1000);
 }
 
 fn test_into_inner(owned: OwnedRalc<i32, impl Ledger>) {
@@ -81,7 +81,7 @@ fn test_into_inner_full(
 ) {
     assert_eq!(reallocation.map(|_| get_reallocation()), reallocation);
 
-    let mut wr = owned.write();
+    let mut wr = owned.write().unwrap();
     *wr = 99;
     assert_eq!(owned.ledger().cookie().count(), u32::MAX);
     std::mem::drop(wr);
@@ -100,7 +100,7 @@ fn test_write_read_full(
     mut get_reallocation: impl FnMut() -> NonZeroU64,
     reallocation: Option<NonZeroU64>,
 ) {
-    let mut wr = owned.write();
+    let mut wr = owned.write().unwrap();
     *wr = 99;
     assert_eq!(owned.ledger().cookie().count(), u32::MAX);
     std::mem::drop(wr);
@@ -109,7 +109,7 @@ fn test_write_read_full(
 
     assert_eq!(owned.ledger().cookie().count(), 0);
 
-    let rd = owned.read();
+    let rd = owned.read().unwrap();
     assert_eq!(owned.ledger().cookie().count(), 1);
     let res = *rd;
     std::mem::drop(rd);

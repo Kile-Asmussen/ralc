@@ -1,10 +1,13 @@
 use std::{fmt, mem::ManuallyDrop, num::NonZeroU64, ptr::NonNull};
 
-use crate::{RalcMut, RalcRef, cookie::CookieJar, ledgers::Ledger};
+use crate::{NoAccess, RalcMut, RalcRef, Result, cookie::CookieJar, ledgers::Ledger};
 
 mod _limit_visibility {
     use super::*;
 
+    /// A borrowed reallocation-counting pointer.
+    ///
+    /// Unlike `Arc::Weak`, this is `Copy` and has no `Drop`.
     pub struct BorrowRalc<T, L: Ledger> {
         reallocation: NonZeroU64,
         /// # Safety invariant:
@@ -84,60 +87,70 @@ impl<T, L: Ledger> BorrowRalc<T, L> {
     }
 
     /// Get a readable reference through this borrow. Wait on access if possible.
+    /// Returns `None` if the reference is stale.
     ///
-    /// This method panics if the reference is stale or if waiting is not available.
-    pub fn read(&self) -> RalcRef<'_, T, L> {
+    /// This method panics if waiting is not available.
+    pub fn read(&self) -> Result<RalcRef<'_, T, L>> {
         if !self.check() {
-            panic!("Attempt to read through stale borrowed ralc, remember to .check() first!");
+            return Err(NoAccess::Stale);
         }
 
-        let cookie = self
-            .ledger()
-            .cookie()
-            .read()
-            .unwrap_or_else(|| L::read_failure());
+        let Some(cookie) = self.ledger().cookie().read() else {
+            return Err(NoAccess::Deadlock);
+        };
 
-        unsafe {
+        if !self.check() {
+            return Err(NoAccess::Stale);
+        }
+
+        Ok(unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Cookie is generated just above
             // 3. Guaranteed directly
             RalcRef::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
-        }
+        })
     }
 
     /// Get a writable reference through this borrow. Wait on access if possible.
+    /// Returns `None` if the reference is stale.
     ///
     /// This method panics if the reference is stale or if waiting is not available.
-    pub fn write(&self) -> RalcMut<'_, T, L> {
+    pub fn write(&self) -> Result<RalcMut<'_, T, L>> {
         if !self.check() {
-            panic!("Attempt to write through stale borrowed ralc, remember to .check() first!");
+            return Err(NoAccess::Stale);
         }
 
-        let cookie = self
-            .ledger()
-            .cookie()
-            .write()
-            .unwrap_or_else(|| L::write_failure());
+        let Some(cookie) = self.ledger().cookie().write() else {
+            return Err(NoAccess::Deadlock);
+        };
 
-        unsafe {
+        if !self.check() {
+            return Err(NoAccess::Stale);
+        }
+
+        Ok(unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Created just above
             // 3. Guaranteed directly
             RalcMut::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
-        }
+        })
     }
 
     /// Get a readable reference through this borrow. Returns `None` immediately if access
     /// cannot be acquired.
-    pub fn try_read(&self) -> Option<RalcRef<'_, T, L>> {
+    pub fn try_read(&self) -> Result<RalcRef<'_, T, L>> {
         if !self.check() {
-            return None;
+            return Err(NoAccess::Stale);
         }
 
         if let Some(cookie) = self.ledger().cookie().try_read() {
-            Some(unsafe {
+            if !self.check() {
+                return Err(NoAccess::Stale);
+            }
+
+            Ok(unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
                 // 2. Cookie is generated just above
@@ -145,19 +158,23 @@ impl<T, L: Ledger> BorrowRalc<T, L> {
                 RalcRef::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
             })
         } else {
-            None
+            Err(NoAccess::Blocked)
         }
     }
 
     /// Get a writable reference through this borrow. Returns `None` immediately if access
     /// cannot be acquired.
-    pub fn try_write(&self) -> Option<RalcMut<'_, T, L>> {
+    pub fn try_write(&self) -> Result<RalcMut<'_, T, L>> {
         if !self.check() {
-            return None;
+            return Err(NoAccess::Stale);
         }
 
         if let Some(cookie) = self.ledger().cookie().try_write() {
-            Some(unsafe {
+            if !self.check() {
+                return Err(NoAccess::Stale);
+            }
+
+            Ok(unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
                 // 2. Created just above
@@ -165,7 +182,7 @@ impl<T, L: Ledger> BorrowRalc<T, L> {
                 RalcMut::from_parts(cookie, self.reallocation(), self.ledger_ptr(), self.data())
             })
         } else {
-            None
+            Err(NoAccess::Blocked)
         }
     }
 }
@@ -190,7 +207,7 @@ impl<T: fmt::Debug, L: Ledger> fmt::Debug for BorrowRalc<T, L> {
 impl<T: fmt::Display, L: Ledger> fmt::Display for BorrowRalc<T, L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let marker = if f.alternate() { " (borrowed)" } else { "" };
-        if let Some(r) = self.try_read() {
+        if let Ok(r) = self.try_read() {
             write!(f, "{}{}", r, marker)
         } else {
             write!(f, "<unavailable>{}", marker)

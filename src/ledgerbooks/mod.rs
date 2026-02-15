@@ -29,12 +29,17 @@ pub trait LedgerBook<L: Ledger> {
 
     fn bump_chunk_size(&mut self) {}
 
+    #[inline]
+    fn alloc_vec(size: usize) -> Vec<L> {
+        Vec::with_capacity(size)
+    }
+
     fn allocate<F: FnMut() -> L>(&mut self, mut produce: F) -> NonNull<L> {
         if let Some(x) = self.next_free() {
             return x;
         } else {
             let size = self.chunk_size();
-            let mut ledgers = Vec::with_capacity(size);
+            let mut ledgers = Self::alloc_vec(size);
             for _ in 0..size {
                 ledgers.push(produce())
             }

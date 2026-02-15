@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    BorrowRalc,
+    BorrowRalc, NoAccess, Result,
     cookie::CookieJar,
     ledgers::{Ledger, LedgerExt},
     mut_::RalcMut,
@@ -76,8 +76,8 @@ impl<T, L: Ledger> Drop for OwnedRalc<T, L> {
 }
 
 impl<T, L: Ledger> OwnedRalc<T, L> {
-    pub fn try_into_inner(self) -> Result<T, Self> {
-        let res = if let Some(w) = self.try_write() {
+    pub fn try_into_inner(self) -> std::result::Result<T, Self> {
+        let res = if let Ok(w) = self.try_write() {
             unsafe {
                 // SAFETY:
                 // 1. We forget self just below
@@ -100,14 +100,12 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
         }
     }
 
-    pub fn read(&self) -> RalcRef<'_, T, L> {
-        let cookie = self
-            .ledger()
-            .cookie()
-            .read()
-            .unwrap_or_else(|| L::read_failure());
+    pub fn read(&self) -> Result<RalcRef<'_, T, L>> {
+        let Some(cookie) = self.ledger().cookie().read() else {
+            return Err(NoAccess::Deadlock);
+        };
 
-        unsafe {
+        Ok(unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Created just above
@@ -118,12 +116,12 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
                 self.ledger_ptr(),
                 self.data(),
             )
-        }
+        })
     }
 
-    pub fn try_read(&self) -> Option<RalcRef<'_, T, L>> {
+    pub fn try_read(&self) -> Result<RalcRef<'_, T, L>> {
         if let Some(cookie) = self.ledger().cookie().try_read() {
-            Some(unsafe {
+            Ok(unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
                 // 2. Created just above
@@ -136,18 +134,16 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
                 )
             })
         } else {
-            None
+            Err(NoAccess::Blocked)
         }
     }
 
-    pub fn write(&self) -> RalcMut<'_, T, L> {
-        let cookie = self
-            .ledger()
-            .cookie()
-            .write()
-            .unwrap_or_else(|| L::write_failure());
+    pub fn write(&self) -> Result<RalcMut<'_, T, L>> {
+        let Some(cookie) = self.ledger().cookie().write() else {
+            return Err(NoAccess::Deadlock);
+        };
 
-        unsafe {
+        Ok(unsafe {
             // SAFETY:
             // 1. Guaranteed directly
             // 2. Created just above
@@ -158,10 +154,10 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
                 self.ledger_ptr(),
                 self.data(),
             )
-        }
+        })
     }
 
-    pub fn try_write(&self) -> Option<RalcMut<'_, T, L>> {
+    pub fn try_write(&self) -> Result<RalcMut<'_, T, L>> {
         // SAFETY:
         // 1. Self evident
         unsafe { self.try_write_with_reallocation(self.ledger().reallocation()) }
@@ -169,12 +165,13 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
 
     /// # Safety requirements
     /// 1. `reallocation` is not greater than current value of [`.ledger().reallocation()`](Ledger::reallocation)
+    #[inline]
     pub unsafe fn try_write_with_reallocation(
         &self,
         reallocation: NonZeroU64,
-    ) -> Option<RalcMut<'_, T, L>> {
+    ) -> Result<RalcMut<'_, T, L>> {
         if let Some(cookie) = self.ledger().cookie().try_write() {
-            Some(unsafe {
+            Ok(unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
                 // 2. Created just above
@@ -182,7 +179,7 @@ impl<T, L: Ledger> OwnedRalc<T, L> {
                 RalcMut::from_parts(cookie, reallocation, self.ledger_ptr(), self.data())
             })
         } else {
-            None
+            Err(NoAccess::Blocked)
         }
     }
 }
@@ -207,7 +204,7 @@ impl<T: fmt::Debug, L: Ledger> fmt::Debug for OwnedRalc<T, L> {
 impl<T: fmt::Display, L: Ledger> fmt::Display for OwnedRalc<T, L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let marker = if f.alternate() { " (owned)" } else { "" };
-        if let Some(r) = self.try_read() {
+        if let Ok(r) = self.try_read() {
             write!(f, "{}{}", r, marker)
         } else {
             write!(f, "<unavailable>{}", marker)

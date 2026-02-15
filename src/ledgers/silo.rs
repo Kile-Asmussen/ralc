@@ -1,6 +1,6 @@
 use std::{cell::Cell, num::NonZeroU64};
 
-use crate::ledgers::Ledger;
+use crate::{cookie::CookieJar, ledgers::Ledger};
 
 #[derive(Debug)]
 pub struct SiloedLedger {
@@ -9,23 +9,31 @@ pub struct SiloedLedger {
     _marker: Marker,
 }
 
+impl Default for SiloedLedger {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            count: Cell::new(unsafe { NonZeroU64::new_unchecked(1) }),
+            lock: Cell::INIT,
+            _marker: Marker::Marker,
+        }
+    }
+}
+
+impl Clone for SiloedLedger {
+    #[inline]
+    fn clone(&self) -> Self {
+        Default::default()
+    }
+}
+
 #[test]
 fn send_sync() {
     use assert_impl::assert_impl;
     assert_impl!(!Sync: SiloedLedger);
 }
 
-impl Default for SiloedLedger {
-    fn default() -> Self {
-        Self {
-            count: Cell::new(unsafe { NonZeroU64::new_unchecked(1) }),
-            lock: Default::default(),
-            _marker: Default::default(),
-        }
-    }
-}
-
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 #[repr(u32)]
 enum Marker {
     #[default]

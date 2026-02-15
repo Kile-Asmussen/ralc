@@ -1,4 +1,4 @@
-use crate::allocators::ThreadLocalAllocator;
+use crate::allocators::{ThreadLocal, ThreadLocalAllocator};
 
 use super::*;
 
@@ -14,10 +14,10 @@ fn borrows_dont_allocate() {
 
 #[test]
 fn test_thread_local_write_read() {
-    test_write_read(OwnedRalc::new_thread_local(0));
+    test_write_read(OwnedRalc::<_, ThreadLocal>::new(0));
 }
 
 #[test]
 fn test_thread_local_into_inner() {
-    test_into_inner(OwnedRalc::new_thread_local(0));
+    test_into_inner(OwnedRalc::<_, ThreadLocal>::new(0));
 }

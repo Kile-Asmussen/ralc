@@ -1,7 +1,6 @@
-use std::{cell::RefCell, mem::ManuallyDrop, ops::DerefMut, ptr::NonNull};
+use std::{cell::RefCell, ops::DerefMut};
 
 use crate::{
-    OwnedRalc, Ralc,
     allocators::{AllocatedLedger, LedgerAllocator},
     ledgers::silo::SiloedLedger,
 };
@@ -9,7 +8,7 @@ use crate::{
 #[cfg(not(feature = "bumpalo"))]
 type Book<L> = crate::ledgerbooks::RetainingBook<L>;
 #[cfg(feature = "bumpalo")]
-type Book<L> = crate::ledgerbooks::BumpyBook<NonNull<L>, L>;
+type Book<L> = crate::ledgerbooks::BumpyBook<std::ptr::NonNull<L>, L>;
 
 thread_local! {
     static RALC: RefCell<Book<SiloedLedger>> = RefCell::new(Book::new());
@@ -21,7 +20,7 @@ impl LedgerAllocator for ThreadLocalAllocator {
     type WrappedLedger = SiloedLedger;
     type Allocator = Book<SiloedLedger>;
 
-    const LIFETIME_NAME: &'static str = "'task";
+    const LIFETIME_NAME: &'static str = "'thread";
 
     fn with<X, F: FnOnce(&mut Self::Allocator) -> X>(scope: F) -> X {
         RALC.with(|ralc| scope(ralc.borrow_mut().deref_mut()))
@@ -29,26 +28,3 @@ impl LedgerAllocator for ThreadLocalAllocator {
 }
 
 pub type ThreadLocal = AllocatedLedger<ThreadLocalAllocator>;
-
-impl<T> OwnedRalc<T, ThreadLocal> {
-    pub fn new_thread_local(data: T) -> Self {
-        let data = Box::new(ManuallyDrop::new(data));
-        unsafe {
-            // SAFETY:
-            // 1. Guaranteed directly
-            // 2. Self-evident
-            Self::from_raw_parts(
-                ThreadLocalAllocator::alloc(),
-                // SAFETY:
-                // 1. Guaranteed by Box
-                NonNull::new_unchecked(Box::into_raw(data)),
-            )
-        }
-    }
-}
-
-impl<T> Ralc<T, ThreadLocal> {
-    pub fn new_thread_local(data: T) -> Self {
-        Self::Owned(OwnedRalc::new_thread_local(data))
-    }
-}

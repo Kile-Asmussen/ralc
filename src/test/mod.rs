@@ -8,10 +8,12 @@ use crate::{
     cookie::CookieJar,
     ledgers::Ledger,
 };
+static MUTEX: Mutex<()> = Mutex::new(());
 
 mod global;
 mod local;
 mod pool;
+mod stress;
 
 fn predictable_allocation_count_for<A: LedgerAllocator>() {
     predictable_allocation_count(
@@ -22,6 +24,11 @@ fn predictable_allocation_count_for<A: LedgerAllocator>() {
     );
 }
 
+#[cfg(miri)]
+const N: usize = 100;
+#[cfg(not(miri))]
+const N: usize = 100_000;
+
 fn predictable_allocation_count<L: Ledger>(
     new: impl Fn(i32) -> OwnedRalc<i32, L>,
     reset: impl Fn(),
@@ -30,14 +37,14 @@ fn predictable_allocation_count<L: Ledger>(
 ) {
     reset();
     let mut vec = vec![];
-    for i in 0..1000 {
-        vec.push(new(i))
+    for i in 0..N {
+        vec.push(new(i as i32))
     }
-    assert_eq!(1000, total_allocations());
+    assert_eq!(N, total_allocations());
     for or in vec {
         test_write_read(or);
     }
-    assert!(free_count() >= 1000);
+    assert!(free_count() >= N);
 }
 
 fn borrows_dont_allocate_for<A: LedgerAllocator>() {
@@ -56,14 +63,14 @@ fn borrows_dont_allocate<L: Ledger>(
     reset();
     let owned = new(0);
     let mut vec = vec![];
-    for _ in 0..1000 {
+    for _ in 0..N {
         vec.push(owned.borrow());
     }
     assert_eq!(1, total_allocations());
     for or in vec {
         *or.write().unwrap() += 1;
     }
-    assert_eq!(*owned.read().unwrap(), 1000);
+    assert_eq!(*owned.read().unwrap(), N as i32);
 }
 
 fn test_into_inner(owned: OwnedRalc<i32, impl Ledger>) {

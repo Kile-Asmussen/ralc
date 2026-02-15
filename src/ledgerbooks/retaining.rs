@@ -35,41 +35,23 @@ impl<L: Ledger> RetainingBook<L> {
     }
 }
 
-impl<L: Ledger> LedgerBook<L> for RetainingBook<L> {
-    unsafe fn deallocate(&mut self, ledger: NonNull<L>) {
-        self.free.push(ledger);
-    }
+impl<L: Ledger + Clone> LedgerBook<L> for RetainingBook<L> {
+    type Storage = NonNull<L>;
 
-    fn allocate<F: FnMut() -> L>(&mut self, mut produce: F) -> NonNull<L> {
-        #[cfg(test)]
-        {
-            self.total_allocations += 1;
-        }
-        let res = self.free.pop();
-        if let Some(x) = res {
-            return x;
-        } else {
-            let mut ledgers = Vec::with_capacity(self.chunk_size);
-            for _ in 0..self.chunk_size {
-                ledgers.push(produce())
-            }
-            self.chunk_size = usize::max(self.chunk_size * 2, self.max_chunk_size);
-
-            #[cfg(test)]
-            {
-                self.expansions += 1;
-            }
-            self.alloc.push(ledgers.into_boxed_slice());
-            let boxed_slice = &self.alloc.last().unwrap()[..];
-            self.free.extend(boxed_slice.iter().map(NonNull::from_ref));
-
-            return self.free.pop().unwrap();
-        }
+    #[inline]
+    fn free_list(&mut self) -> &mut Vec<Self::Storage> {
+        &mut self.free
     }
 
     #[cfg(test)]
     fn expansions(&self) -> usize {
         self.expansions
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn count_allocation(&mut self) {
+        self.total_allocations += 1;
     }
 
     #[cfg(test)]
@@ -84,10 +66,32 @@ impl<L: Ledger> LedgerBook<L> for RetainingBook<L> {
 
     #[cfg(test)]
     fn reset(&mut self) {
-        self.chunk_size = CHUNK_SIZE;
         self.total_allocations = 0;
         self.expansions = 0;
         self.free.clear();
         self.dump.append(&mut self.alloc);
+    }
+
+    fn set_chunks(&mut self, chunk: usize, limit: usize) {
+        self.chunk_size = chunk;
+        self.max_chunk_size = limit;
+    }
+
+    #[inline]
+    fn lazy_init(&mut self) {}
+
+    #[inline]
+    fn new_slice(&mut self, sample: &L) -> (&[L], &mut Vec<Self::Storage>) {
+        let mut ledgers = Vec::with_capacity(self.chunk_size);
+        for _ in 0..self.chunk_size {
+            ledgers.push(sample.clone())
+        }
+        self.alloc.push(ledgers.into_boxed_slice());
+        (self.alloc.last().unwrap(), &mut self.free)
+    }
+
+    #[cfg(test)]
+    fn count_expansion(&mut self) {
+        self.expansions += 1;
     }
 }

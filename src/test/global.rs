@@ -2,8 +2,6 @@ use crate::allocators::Global;
 
 use super::*;
 
-static MUTEX: Mutex<()> = Mutex::new(());
-
 #[test]
 fn predicatble_allocation_count_global() {
     let _lock = MUTEX.lock();

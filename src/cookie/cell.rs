@@ -33,6 +33,8 @@ impl CookieJar for Cell<u32> {
     fn count(&self) -> u32 {
         self.get()
     }
+
+    const INIT: Self = Cell::new(0);
 }
 
 #[repr(transparent)]

@@ -18,9 +18,11 @@ pub trait WriteCookie {
     fn downgrade(self) -> Self::DowngradesTo;
 }
 
-pub trait CookieJar: Default {
+pub trait CookieJar {
     type ReadToken<'a>: ReadCookie<UpgradesTo = Self::WriteToken<'a>>;
     type WriteToken<'a>: WriteCookie<DowngradesTo = Self::ReadToken<'a>>;
+
+    const INIT: Self;
 
     /// Provide an approximate count of the number of readers of this lock,
     /// returning u32::MAX if a write lock exists. Only available for testing.

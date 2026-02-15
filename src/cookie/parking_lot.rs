@@ -3,16 +3,12 @@ use parking_lot::{RawRwLock as RwLock, lock_api::RawRwLock};
 #[repr(transparent)]
 pub struct ParkLock(RwLock);
 
-impl Default for ParkLock {
-    fn default() -> Self {
-        ParkLock(RwLock::INIT)
-    }
-}
-
 impl CookieJar for ParkLock {
     type ReadToken<'a> = ParkReadToken<'a>;
 
     type WriteToken<'a> = ParkWriteToken<'a>;
+
+    const INIT: Self = ParkLock(RwLock::INIT);
 
     fn try_read(&self) -> Option<ParkReadToken<'_>> {
         if self.0.try_lock_shared() {

@@ -1,51 +1,41 @@
-use std::{marker::PhantomData, num::NonZeroU64, ptr::NonNull};
+use std::marker::PhantomData;
 
 use bumpalo::Bump;
 
-use crate::{ledgerbooks::LedgerBook, ledgers::Ledger};
+use crate::{
+    ledgerbooks::{CHUNK_SIZE, LedgerBook, RefLike},
+    ledgers::Ledger,
+};
 
-pub trait RefLike<L>: Copy + Sized {
-    fn to_ptr(self) -> NonNull<L>;
-    fn from_ptr(ptr: NonNull<L>) -> Self;
-}
-
-impl<L> RefLike<L> for NonNull<L> {
-    fn to_ptr(self) -> NonNull<L> {
-        self
-    }
-
-    fn from_ptr(ptr: NonNull<L>) -> Self {
-        ptr
-    }
-}
-
-impl<L> RefLike<L> for &'static L {
-    fn to_ptr(self) -> NonNull<L> {
-        NonNull::from_ref(self)
-    }
-
-    fn from_ptr(ptr: NonNull<L>) -> Self {
-        unsafe { ptr.as_ref() }
-    }
-}
-
-pub struct BumpyBook<R: RefLike<L>, L: Ledger> {
+pub struct BumpyBook<R: RefLike<L>, L: Ledger + Clone + 'static> {
+    chunk_size: usize,
+    max_chunk_size: usize,
     #[cfg(test)]
     total_allocations: usize,
     #[cfg(test)]
     expansions: usize,
+    #[cfg(test)]
+    dump: Vec<Bump<8>>,
     alo: Option<Bump<8>>,
     free: Vec<R>,
     _phantom: PhantomData<L>,
 }
 
-impl<R: RefLike<L>, L: Ledger + 'static> BumpyBook<R, L> {
+impl<R, L> BumpyBook<R, L>
+where
+    R: RefLike<L>,
+    L: Ledger + Clone + 'static,
+{
     pub(crate) const fn new() -> Self {
         Self {
+            chunk_size: CHUNK_SIZE,
+            max_chunk_size: CHUNK_SIZE,
             #[cfg(test)]
             expansions: 0,
             #[cfg(test)]
             total_allocations: 0,
+            #[cfg(test)]
+            dump: Vec::new(),
             alo: None,
             free: Vec::new(),
             _phantom: PhantomData,
@@ -53,18 +43,12 @@ impl<R: RefLike<L>, L: Ledger + 'static> BumpyBook<R, L> {
     }
 }
 
-impl<R: RefLike<L>, L: Ledger> LedgerBook<L> for BumpyBook<R, L> {
-    unsafe fn deallocate(&mut self, ledger: NonNull<L>) {
-        let ledger_ref = unsafe {
-            // SAFETY:
-            // 1. Guaranteed by caller
-            ledger.as_ref()
-        };
-
-        if ledger_ref.reallocation() != NonZeroU64::MAX {
-            self.free.push(R::from_ptr(ledger));
-        }
-    }
+impl<R, L> LedgerBook<L> for BumpyBook<R, L>
+where
+    R: RefLike<L>,
+    L: Ledger + Clone,
+{
+    type Storage = R;
 
     #[cfg(test)]
     fn expansions(&self) -> usize {
@@ -85,26 +69,50 @@ impl<R: RefLike<L>, L: Ledger> LedgerBook<L> for BumpyBook<R, L> {
     fn reset(&mut self) {
         self.expansions = 0;
         self.total_allocations = 0;
+        if let Some(alo) = self.alo.take() {
+            self.dump.push(alo);
+        }
         self.free.clear();
     }
 
-    fn allocate<F: FnMut() -> L>(&mut self, mut produce: F) -> NonNull<L> {
-        #[cfg(test)]
-        {
-            self.total_allocations += 1;
-        }
-        let res = self.free.pop();
-        if let Some(x) = res {
-            return x.to_ptr();
-        } else {
-            let alo = if let Some(ref mut alo) = self.alo {
-                alo
-            } else {
-                self.alo = Some(Bump::with_min_align());
-                self.alo.as_mut().unwrap()
-            };
+    #[inline]
+    fn set_chunks(&mut self, chunk: usize, limit: usize) {
+        self.chunk_size = chunk;
+        self.max_chunk_size = limit;
+    }
 
-            NonNull::from_mut(alo.alloc(produce()))
-        }
+    #[cfg(test)]
+    #[inline]
+    fn count_allocation(&mut self) {
+        self.total_allocations += 1;
+    }
+
+    #[inline]
+    fn free_list(&mut self) -> &mut Vec<Self::Storage> {
+        &mut self.free
+    }
+
+    #[inline]
+    fn lazy_init(&mut self) {
+        if self.alo.is_none() {
+            self.alo = Some(Bump::with_min_align());
+        };
+    }
+
+    #[inline]
+    fn new_slice(&mut self, sample: &L) -> (&[L], &mut Vec<Self::Storage>) {
+        (
+            self.alo
+                .as_ref()
+                .unwrap()
+                .alloc_slice_fill_clone(self.chunk_size, sample),
+            &mut self.free,
+        )
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn count_expansion(&mut self) {
+        self.expansions += 1;
     }
 }

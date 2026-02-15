@@ -1,6 +1,10 @@
 use std::ptr::NonNull;
 
-use crate::{OwnedRalc, Ralc, ledgerbooks::LedgerBook, ledgers::Ledger};
+use crate::{
+    OwnedRalc, Ralc,
+    ledgerbooks::{LedgerBook, LedgerBookExt},
+    ledgers::Ledger,
+};
 
 #[cfg(feature = "parking-lot")]
 mod global;
@@ -15,7 +19,7 @@ mod thread_local;
 pub use thread_local::{ThreadLocal, ThreadLocalAllocator};
 
 pub trait LedgerAllocator {
-    type WrappedLedger: Ledger + Default;
+    type WrappedLedger: Ledger + Default + Clone;
     type Allocator: LedgerBook<Self::WrappedLedger>;
 
     const LIFETIME_NAME: &'static str = "'_";
@@ -29,7 +33,7 @@ pub trait LedgerAllocator {
         Self::with(|a| unsafe {
             // SAFETY:
             // 1. Self-evident
-            AllocatedLedger::from_inner_ptr(a.allocate(Default::default))
+            AllocatedLedger::from_inner_ptr(a.allocate(&Default::default()))
         })
     }
 
@@ -43,6 +47,10 @@ pub trait LedgerAllocator {
             // 2. Guaranteed by caller
             a.deallocate(AllocatedLedger::into_inner_ptr(ledger))
         })
+    }
+
+    fn set_chunks(chunk: usize, limit: usize) {
+        Self::with(|a| a.set_chunks(chunk, limit))
     }
 
     #[cfg(test)]

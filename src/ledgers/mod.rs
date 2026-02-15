@@ -9,6 +9,7 @@ pub mod sync;
 pub trait Ledger {
     type Cookies: CookieJar;
     const LIFETIME_NAME: &'static str = "'_";
+
     fn cookie(&self) -> &Self::Cookies;
     fn reallocation(&self) -> NonZeroU64;
 

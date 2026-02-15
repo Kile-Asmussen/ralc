@@ -3,26 +3,37 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::{cookie::parking_lot::ParkLock, ledgers::Ledger};
+use crate::{
+    cookie::{CookieJar, parking_lot::ParkLock},
+    ledgers::Ledger,
+};
 
 pub struct SyncLedger {
     count: AtomicU64,
     lock: ParkLock,
 }
 
+impl Clone for SyncLedger {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl Default for SyncLedger {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            count: AtomicU64::new(1),
+            lock: ParkLock::INIT,
+        }
+    }
+}
+
 #[test]
 fn send_sync() {
     use assert_impl::assert_impl;
     assert_impl!(Sync: SyncLedger);
-}
-
-impl Default for SyncLedger {
-    fn default() -> Self {
-        Self {
-            count: AtomicU64::new(1),
-            lock: ParkLock::default(),
-        }
-    }
 }
 
 impl Ledger for SyncLedger {

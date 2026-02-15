@@ -23,8 +23,7 @@ tokio.optional = false
 tokio.features = ["rt"]
 
 [features]
-default = ["parking-lot", "bumpalo"]
-#default = ["parking-lot"]
+default = ["parking-lot"]
 tokio = ["dep:tokio"]
 parking-lot = ["dep:parking_lot"]
 bumpalo = ["dep:bumpalo"]

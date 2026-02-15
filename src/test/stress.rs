@@ -1,19 +1,27 @@
+use std::time::Instant;
+#[cfg(feature = "bumpalo")]
 use std::{cell::RefCell, ops::DerefMut, time::Instant};
 
+#[cfg(feature = "bumpalo")]
 use parking_lot::Mutex;
 
+#[cfg(not(feature = "bumpalo"))]
+use crate::allocators::GlobalAllocator;
 #[cfg(feature = "bumpalo")]
 use crate::allocators::GlobalAllocator;
+#[cfg(feature = "bumpalo")]
+use crate::ledgers::{silo::SiloedLedger, sync::SyncLedger};
 use crate::{
     OwnedRalc,
     allocators::{AllocatedLedger, LedgerAllocator, PoolAllocator, ThreadLocalAllocator},
-    ledgers::{silo::SiloedLedger, sync::SyncLedger},
     test::MUTEX,
 };
 
 const N: usize = 10_000_000;
 
 #[test]
+#[cfg(feature = "bumpalo")]
+
 fn stress_test_2_global_bumpalo() {
     let _lock = MUTEX.lock();
     #[cfg(feature = "bumpalo")]
@@ -32,6 +40,8 @@ fn stress_test_2_global_non_bumpalo() {
 }
 
 #[test]
+#[cfg(feature = "bumpalo")]
+
 fn stress_test_2_threadlocal_bumpalo() {
     let _lock = MUTEX.lock();
     #[cfg(feature = "bumpalo")]
@@ -113,19 +123,18 @@ fn stress_test_2<A: LedgerAllocator>() {
 //////////////////////////
 
 #[cfg(feature = "bumpalo")]
-type Book<L> = crate::ledgerbooks::RetainingBook<L>;
-#[cfg(not(feature = "bumpalo"))]
-type Book<L> = crate::ledgerbooks::BumpyBook<std::ptr::NonNull<L>, L>;
-
 thread_local! {
-    static RALC: RefCell<Book<SiloedLedger>> = RefCell::new(Book::new());
+    static RALC: RefCell<RetainingBook<SiloedLedger>> = RefCell::new(RetainingBook::new());
 }
 
+#[cfg(feature = "bumpalo")]
 pub struct OtherThreadLocalAllocator;
+
+#[cfg(feature = "bumpalo")]
 
 impl LedgerAllocator for OtherThreadLocalAllocator {
     type WrappedLedger = SiloedLedger;
-    type Allocator = Book<SiloedLedger>;
+    type Allocator = RetainingBook<SiloedLedger>;
 
     const LIFETIME_NAME: &'static str = "'thread";
 
@@ -137,18 +146,17 @@ impl LedgerAllocator for OtherThreadLocalAllocator {
 ////////////
 
 #[cfg(feature = "bumpalo")]
-type Book2<L> = crate::ledgerbooks::LeakyBook<L>;
-#[cfg(not(feature = "bumpalo"))]
-type Book2<L> = crate::ledgerbooks::BumpyBook<&'static L, L>;
 
 pub struct OtherGlobalAllocator;
 
+#[cfg(feature = "bumpalo")]
+
 impl LedgerAllocator for OtherGlobalAllocator {
     type WrappedLedger = SyncLedger;
-    type Allocator = Book2<SyncLedger>;
+    type Allocator = LeakyBook<SyncLedger>;
 
     fn with<X, F: FnOnce(&mut Self::Allocator) -> X>(scope: F) -> X {
-        static RALC: Mutex<Book2<SyncLedger>> = Mutex::new(Book2::new());
+        static RALC: Mutex<LeakyBook<SyncLedger>> = Mutex::new(LeakyBook::new());
         scope(&mut RALC.lock())
     }
 

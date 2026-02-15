@@ -5,7 +5,7 @@ use crate::{
     ledgers::Ledger,
 };
 
-pub struct LeakyBook<L: Ledger + Default + 'static> {
+pub struct LeakyBook<L: Ledger + 'static> {
     chunk_size: usize,
     max_chunk_size: usize,
     #[cfg(test)]
@@ -16,6 +16,7 @@ pub struct LeakyBook<L: Ledger + Default + 'static> {
 }
 
 impl<L: Ledger + Default + 'static> LeakyBook<L> {
+    #[cfg_attr(feature = "bumpalo", allow(dead_code))]
     pub(crate) const fn new() -> Self {
         Self {
             chunk_size: CHUNK_SIZE,
@@ -29,7 +30,7 @@ impl<L: Ledger + Default + 'static> LeakyBook<L> {
     }
 }
 
-impl<L: Ledger + Default> LedgerBook<L> for LeakyBook<L> {
+impl<L: Ledger> LedgerBook<L> for LeakyBook<L> {
     unsafe fn deallocate(&mut self, ledger: NonNull<L>) {
         let ledger = unsafe {
             // SAFETY:
@@ -42,40 +43,29 @@ impl<L: Ledger + Default> LedgerBook<L> for LeakyBook<L> {
         }
     }
 
-    #[miri::ignore_leaks = "intentional leak"]
-    fn extend_free_list(&mut self, vec: Vec<L>) {
+    fn allocate<F: FnMut() -> L>(&mut self, mut produce: F) -> NonNull<L> {
         #[cfg(test)]
         {
-            self.expansions += 1;
-        }
-        let leak = vec.leak();
-        self.free.extend(leak.iter())
-    }
-
-    #[miri::ignore_leaks = "intentional leak"]
-    #[inline]
-    fn alloc_vec(size: usize) -> Vec<L> {
-        Vec::with_capacity(size)
-    }
-
-    fn next_free(&mut self) -> Option<NonNull<L>> {
-        let res = self.free.pop().map(NonNull::from_ref);
-        #[cfg(test)]
-        if res.is_some() {
             self.total_allocations += 1;
         }
-        res
-    }
-
-    fn chunk_size(&self) -> usize {
-        self.chunk_size
-    }
-
-    fn bump_chunk_size(&mut self) {
-        if self.chunk_size < self.max_chunk_size {
-            self.chunk_size *= 2;
+        let res = self.free.pop().map(NonNull::from_ref);
+        if let Some(x) = res {
+            return x;
         } else {
-            self.chunk_size = self.max_chunk_size;
+            let mut ledgers = Vec::with_capacity(self.chunk_size);
+            for _ in 0..self.chunk_size {
+                ledgers.push(produce())
+            }
+            self.chunk_size = usize::max(self.chunk_size * 2, self.max_chunk_size);
+
+            #[cfg(test)]
+            {
+                self.expansions += 1;
+            }
+            let leak = ledgers.leak();
+            self.free.extend(leak.iter());
+
+            return self.free.pop().map(NonNull::from_ref).unwrap();
         }
     }
 

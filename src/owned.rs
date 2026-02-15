@@ -27,7 +27,8 @@ mod _limit_visibility {
         data: NonNull<ManuallyDrop<T>>,
     }
 
-    unsafe impl<T: Send, L: Ledger + Sync> Send for OwnedRalc<T, L> {}
+    unsafe impl<T: Send + Sync, L: Ledger + Sync> Send for OwnedRalc<T, L> {}
+    unsafe impl<T: Sync, L: Ledger + Sync> Sync for OwnedRalc<T, L> {}
 
     impl<T, L: Ledger> OwnedRalc<T, L> {
         /// # Safety requirements
@@ -76,12 +77,12 @@ impl<T, L: Ledger> Drop for OwnedRalc<T, L> {
 }
 
 impl<T, L: Ledger> OwnedRalc<T, L> {
-    pub fn try_into_inner(self) -> std::result::Result<T, Self> {
+    pub fn try_into_box(self) -> std::result::Result<Box<T>, Self> {
         let res = if let Ok(w) = self.try_write() {
             unsafe {
                 // SAFETY:
                 // 1. We forget self just below
-                w.unsafe_into_inner()
+                w.unsafe_take_box()
             }
         } else {
             return Err(self);

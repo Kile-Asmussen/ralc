@@ -1,14 +1,15 @@
-use std::{mem::ManuallyDrop, ptr::NonNull};
+use std::ptr::NonNull;
 
 use crate::{OwnedRalc, Ralc, ledgerbooks::LedgerBook, ledgers::Ledger};
 
+#[cfg(feature = "parking-lot")]
 mod global;
 pub use global::{Global, GlobalAllocator};
 mod pool;
 pub use pool::{PoolAllocator, PoolLedger};
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 mod task_local;
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", test))]
 pub use task_local::{TaskLocal, TaskLocalAllocator};
 mod thread_local;
 pub use thread_local::{ThreadLocal, ThreadLocalAllocator};
@@ -67,6 +68,10 @@ pub trait LedgerAllocator {
 
 impl<T, A: LedgerAllocator> OwnedRalc<T, AllocatedLedger<A>> {
     pub fn new(data: T) -> OwnedRalc<T, AllocatedLedger<A>> {
+        Self::from(Box::new(data))
+    }
+
+    pub fn from(data: Box<T>) -> OwnedRalc<T, AllocatedLedger<A>> {
         unsafe {
             // SAFETY:
             // 1. Directly guaranteed
@@ -76,7 +81,7 @@ impl<T, A: LedgerAllocator> OwnedRalc<T, AllocatedLedger<A>> {
                 A::alloc(),
                 // SAFETY:
                 // 1. Box::into_raw never returns null
-                NonNull::new_unchecked(Box::into_raw(Box::new(ManuallyDrop::new(data)))),
+                NonNull::new_unchecked(Box::into_raw(data).cast()),
             )
         }
     }
@@ -84,7 +89,11 @@ impl<T, A: LedgerAllocator> OwnedRalc<T, AllocatedLedger<A>> {
 
 impl<T, A: LedgerAllocator> Ralc<T, AllocatedLedger<A>> {
     pub fn new(data: T) -> Ralc<T, AllocatedLedger<A>> {
-        Ralc::Owned(OwnedRalc::new(data))
+        Self::from(Box::new(data))
+    }
+
+    pub fn from(data: Box<T>) -> Ralc<T, AllocatedLedger<A>> {
+        Ralc::Owned(OwnedRalc::from(data))
     }
 }
 

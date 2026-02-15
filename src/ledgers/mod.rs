@@ -3,6 +3,7 @@ use std::{num::NonZeroU64, ptr::NonNull};
 use crate::cookie::CookieJar;
 
 pub mod silo;
+#[cfg(any(feature = "parking-lot", test))]
 pub mod sync;
 
 pub trait Ledger {

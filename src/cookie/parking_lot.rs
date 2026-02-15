@@ -1,8 +1,5 @@
 use parking_lot::{RawRwLock as RwLock, lock_api::RawRwLock};
 
-#[cfg(test)]
-use assert_impl::assert_impl;
-
 #[repr(transparent)]
 pub struct ParkLock(RwLock);
 
@@ -230,6 +227,7 @@ mod limit_field_access {
 
 #[test]
 fn trait_impls() {
+    use assert_impl::assert_impl;
     assert_impl!(Send: ParkLock, ParkReadToken, ParkWriteToken);
     assert_impl!(Sync: ParkLock, ParkReadToken, ParkWriteToken);
 }

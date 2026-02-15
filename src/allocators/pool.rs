@@ -1,16 +1,25 @@
 use std::{cell::UnsafeCell, marker::PhantomData, mem::ManuallyDrop, ptr::NonNull};
 
+#[cfg(feature = "bumpalo")]
+use crate::ledgerbooks::BumpyBook;
+#[cfg(not(feature = "bumpalo"))]
+use crate::ledgerbooks::RetainingBook;
 use crate::{
     OwnedRalc,
     allocators::pool::_limit_visibility::PoolAllocatedLedger,
     cookie::CookieJar,
-    ledgerbooks::{LedgerBook, RetainingBook},
+    ledgerbooks::LedgerBook,
     ledgers::{Ledger, silo::SiloedLedger},
 };
 
+#[cfg(not(feature = "bumpalo"))]
+type Book<L> = RetainingBook<L>;
+#[cfg(feature = "bumpalo")]
+type Book<L> = BumpyBook<NonNull<L>, L>;
+
 pub struct PoolAllocator<L: Ledger + Default + 'static = SiloedLedger> {
     cookie: L::Cookies,
-    book: UnsafeCell<RetainingBook<PoolAllocatedLedger<L>>>,
+    book: UnsafeCell<Book<PoolAllocatedLedger<L>>>,
 }
 
 unsafe impl<C: Sync, L: Ledger<Cookies = C> + Default> Sync for PoolAllocator<L> {}
@@ -25,12 +34,12 @@ impl<L: Ledger + Default> PoolAllocator<L> {
     pub fn new() -> Self {
         Self {
             cookie: L::Cookies::default(),
-            book: UnsafeCell::new(RetainingBook::new()),
+            book: UnsafeCell::new(Book::new()),
         }
     }
 
     #[cfg(test)]
-    fn peek_a_book<X>(&self, f: impl FnOnce(&RetainingBook<PoolAllocatedLedger<L>>) -> X) -> X {
+    fn peek_a_book<X>(&self, f: impl FnOnce(&Book<PoolAllocatedLedger<L>>) -> X) -> X {
         let _cookie = self.cookie.read().unwrap_or_else(|| L::read_failure());
         let book = self.book.get();
         unsafe {

@@ -3,19 +3,23 @@ use std::{cell::RefCell, mem::ManuallyDrop, ops::DerefMut, ptr::NonNull};
 use crate::{
     OwnedRalc, Ralc,
     allocators::{AllocatedLedger, LedgerAllocator},
-    ledgerbooks::RetainingBook,
     ledgers::silo::SiloedLedger,
 };
 
+#[cfg(not(feature = "bumpalo"))]
+type Book<L> = crate::ledgerbooks::RetainingBook<L>;
+#[cfg(feature = "bumpalo")]
+type Book<L> = crate::ledgerbooks::BumpyBook<NonNull<L>, L>;
+
 thread_local! {
-    static RALC: RefCell<RetainingBook<SiloedLedger>> = RefCell::new(RetainingBook::new());
+    static RALC: RefCell<Book<SiloedLedger>> = RefCell::new(Book::new());
 }
 
 pub struct ThreadLocalAllocator;
 
 impl LedgerAllocator for ThreadLocalAllocator {
     type WrappedLedger = SiloedLedger;
-    type Allocator = RetainingBook<SiloedLedger>;
+    type Allocator = Book<SiloedLedger>;
 
     const LIFETIME_NAME: &'static str = "'task";
 

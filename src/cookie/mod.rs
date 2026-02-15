@@ -1,4 +1,5 @@
 pub mod cell;
+#[cfg(any(feature = "parking-lot", test))]
 pub mod parking_lot;
 
 /// A cookie representing permission to take shared references to a resource.

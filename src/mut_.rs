@@ -83,18 +83,16 @@ mod _limit_visibility {
         }
 
         /// # Safety requirements
-        /// 1. The owned reference this WriteRalc instance came from must not be dropped
-        pub(crate) unsafe fn unsafe_into_inner(mut self) -> T {
+        /// 1. The owned reference this RalcMut instance came from must not be dropped
+        pub(crate) unsafe fn unsafe_take_box(mut self) -> Box<T> {
             let res = unsafe {
                 // SAFETY:
                 // 1. Guaranteed directly
-                let mut data = *Box::from_raw(self.data().as_ptr());
+                let data = Box::from_raw(self.data().cast().as_ptr());
                 // SAFETY:
                 // 1. forget is called just below
                 ManuallyDrop::drop(self.cookie_mut());
-                // SAFETY:
-                // 1. data goes out of scope right after
-                ManuallyDrop::take(&mut data)
+                data
             };
             std::mem::forget(self);
             res

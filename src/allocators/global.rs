@@ -3,18 +3,22 @@ use parking_lot::Mutex;
 use crate::{
     OwnedRalc,
     allocators::{AllocatedLedger, LedgerAllocator},
-    ledgerbooks::LeakyBook,
     ledgers::sync::SyncLedger,
 };
+
+#[cfg(not(feature = "bumpalo"))]
+type Book<L> = crate::ledgerbooks::LeakyBook<L>;
+#[cfg(feature = "bumpalo")]
+type Book<L> = crate::ledgerbooks::BumpyBook<&'static L, L>;
 
 pub struct GlobalAllocator;
 
 impl LedgerAllocator for GlobalAllocator {
     type WrappedLedger = SyncLedger;
-    type Allocator = LeakyBook<SyncLedger>;
+    type Allocator = Book<SyncLedger>;
 
     fn with<X, F: FnOnce(&mut Self::Allocator) -> X>(scope: F) -> X {
-        static RALC: Mutex<LeakyBook<SyncLedger>> = Mutex::new(LeakyBook::new());
+        static RALC: Mutex<Book<SyncLedger>> = Mutex::new(Book::new());
         scope(&mut RALC.lock())
     }
 

@@ -40,34 +40,30 @@ impl<L: Ledger> LedgerBook<L> for RetainingBook<L> {
         self.free.push(ledger);
     }
 
-    fn extend_free_list(&mut self, vec: Vec<L>) {
+    fn allocate<F: FnMut() -> L>(&mut self, mut produce: F) -> NonNull<L> {
         #[cfg(test)]
         {
-            self.expansions += 1;
-        }
-        self.alloc.push(vec.into_boxed_slice());
-        let boxed_slice = &self.alloc.last().unwrap()[..];
-        self.free.extend(boxed_slice.iter().map(NonNull::from_ref));
-    }
-
-    fn next_free(&mut self) -> Option<NonNull<L>> {
-        let res = self.free.pop();
-        #[cfg(test)]
-        if res.is_some() {
             self.total_allocations += 1;
         }
-        res
-    }
-
-    fn chunk_size(&self) -> usize {
-        self.chunk_size
-    }
-
-    fn bump_chunk_size(&mut self) {
-        if self.chunk_size < self.max_chunk_size {
-            self.chunk_size *= 2;
+        let res = self.free.pop();
+        if let Some(x) = res {
+            return x;
         } else {
-            self.chunk_size = self.max_chunk_size;
+            let mut ledgers = Vec::with_capacity(self.chunk_size);
+            for _ in 0..self.chunk_size {
+                ledgers.push(produce())
+            }
+            self.chunk_size = usize::max(self.chunk_size * 2, self.max_chunk_size);
+
+            #[cfg(test)]
+            {
+                self.expansions += 1;
+            }
+            self.alloc.push(ledgers.into_boxed_slice());
+            let boxed_slice = &self.alloc.last().unwrap()[..];
+            self.free.extend(boxed_slice.iter().map(NonNull::from_ref));
+
+            return self.free.pop().unwrap();
         }
     }
 

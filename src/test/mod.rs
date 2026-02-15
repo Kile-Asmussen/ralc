@@ -88,7 +88,7 @@ fn test_into_inner_full(
 
     assert_eq!(owned.ledger().cookie().count(), 0);
 
-    let res = owned.try_into_inner().unwrap();
+    let res = *owned.try_into_box().unwrap();
 
     assert_ne!(reallocation, Some(get_reallocation()));
 

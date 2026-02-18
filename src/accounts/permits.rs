@@ -5,9 +5,9 @@ use parking_lot::{
     lock_api::{RawRwLock, RawRwLockDowngrade, RawRwLockUpgrade, RawRwLockUpgradeDowngrade},
 };
 
-pub trait Permits {
-    const INIT: Self;
+use crate::accounts::init::Init;
 
+pub trait Permits: Init {
     fn try_ref(&self) -> bool;
     fn try_mut(&self) -> bool;
 
@@ -75,8 +75,6 @@ impl Permits for Cell<u32> {
     unsafe fn mut_to_ref(&self) {
         self.set(1);
     }
-
-    const INIT: Self = Cell::new(1);
 }
 
 impl Permits for RwLock {
@@ -134,8 +132,6 @@ impl Permits for RwLock {
             self.unlock_exclusive();
         }
     }
-
-    const INIT: Self = <RwLock as RawRwLock>::INIT;
 }
 
 impl WaitPermits for RwLock {

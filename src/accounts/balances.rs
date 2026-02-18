@@ -4,6 +4,8 @@ use std::{
     sync::atomic::{AtomicU16, AtomicU64, Ordering},
 };
 
+use crate::accounts::init::Init;
+
 /// # Safety requirements:
 /// ```rust
 /// # use racl::accounts::{counts::*, counters::*};
@@ -11,11 +13,11 @@ use std::{
 /// // given Impl : Counter
 ///
 /// // 1.
-/// assert!(!Impl::INIT.get().is_none());
+/// assert!(!Impl::init().get().is_none());
 ///
 /// // 2.
 /// let counter : Impl;
-/// # counter = Impl::INIT;
+/// # counter = Impl::init();
 /// # for _ in 0 .. 1_000_000 {
 /// let n1 = counter.get();
 /// let n2 = counter.get();
@@ -25,7 +27,7 @@ use std::{
 ///
 /// // 3.
 /// let counter : Impl;
-/// # counter = Impl::INIT;
+/// # counter = Impl::init();
 /// # for _ in 0 .. 1_000_000 {
 /// let n1 = counter.get();
 /// counter.incr();
@@ -33,7 +35,7 @@ use std::{
 /// assert!(n1 < n2);
 ///
 /// // 4.
-/// # counter = Impl::INIT;
+/// # counter = Impl::init();
 /// assert!(counter.get() < 0x100_0000_0000_0000);
 ///
 /// // 5.
@@ -48,9 +50,9 @@ use std::{
 /// # test::<CellCounter>();
 /// # test::<AtomicCounter>();
 /// ```
-pub unsafe trait Balance {
-    const INIT: Self;
+pub unsafe trait Balance: Init {
     fn invalidate(&self);
+
     fn check(&self) -> u64;
 }
 
@@ -72,8 +74,6 @@ unsafe impl Balance for Cell<u64> {
     fn check(&self) -> u64 {
         self.get() & 0xFF_FFFF_FFFF_FFFF
     }
-
-    const INIT: Self = Cell::new(1);
 }
 
 // SAFETY:
@@ -94,6 +94,4 @@ unsafe impl Balance for AtomicU64 {
     fn check(&self) -> u64 {
         self.load(Ordering::Acquire) & 0xFF_FFFF_FFFF_FFFF
     }
-
-    const INIT: Self = AtomicU64::new(0);
 }

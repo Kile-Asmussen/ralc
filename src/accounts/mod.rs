@@ -4,39 +4,42 @@ use std::{cell::Cell, num::NonZeroU64, ops::Deref, ptr::NonNull, sync::atomic::A
 use crate::accounts::{balances::Balance, permits::Permits};
 
 pub mod balances;
+pub mod init;
 pub mod permits;
 pub mod simple;
 
-pub trait Account: Freeable + Balance + Permits {}
+pub trait Account: Freeable + Balance {}
 
 /// # Safety reuirements
 /// 1. `free` must drop `mut` permit.
-pub unsafe trait Freeable {
+pub unsafe trait Freeable: Permits {
     /// # Safety requirements:
     /// 1. After calling it, no other interactions may be made with this object.
     /// 2. `mut` permit is invoked on [`.permits()`](Self::permits)
-    unsafe fn free(&self)
-    where
-        Self: Account,
-    {
+    unsafe fn free(&self) {
         unsafe {
             // SAFETY:
             // Guaranteed by caller.
             self.drop_mut();
         }
         // SAFETY:
-        // 3. See above
+        // 1. See above
     }
+}
+
+#[test]
+fn test() {
+    size_of::<AccPtr<dyn Account>>();
 }
 
 use parking_lot::RawRwLock;
 pub(crate) use private::AccPtr;
 mod private {
     use crate::accounts::Account;
-    use std::{num::NonZeroU64, ops::Deref, ptr::NonNull};
+    use std::{ops::Deref, ptr::NonNull};
 
     #[repr(transparent)]
-    pub(crate) struct AccPtr<A: Account> {
+    pub(crate) struct AccPtr<A: Account + ?Sized> {
         /// # Safety invariant:
         /// 1. ONE of these hold:
         ///    1. This is a `'static` reference.
@@ -61,7 +64,7 @@ mod private {
         ///    1. `account` is a reference with `'static` lifetime.
         ///    2. `account` has the lifetime thread locals and `Self: !Send`.
         ///    3. `account` has a shorter lifetime but the type of `A` constrains it.
-        unsafe fn new(account: &A) -> Self {
+        pub unsafe fn new(account: &A) -> Self {
             Self {
                 // SAFETY:
                 // 1. Guaranteed by caller.

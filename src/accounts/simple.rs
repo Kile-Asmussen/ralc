@@ -5,6 +5,7 @@ use parking_lot::RawRwLock;
 use crate::accounts::{
     Account, Freeable,
     balances::Balance,
+    init::Init,
     permits::{Permits, WaitPermits},
 };
 
@@ -22,14 +23,21 @@ unsafe impl<B: Balance, P: Permits> Freeable for SimpleAccount<B, P> {}
 
 impl<B: Balance, P: Permits> Account for SimpleAccount<B, P> {}
 
+impl<B: Balance, P: Permits> Init for SimpleAccount<B, P> {
+    fn init() -> Self
+    where
+        Self: Sized,
+    {
+        Self {
+            balance: Init::init(),
+            permits: Init::init(),
+        }
+    }
+}
+
 // SAFETY:
 // 1. delegated implementation.
 unsafe impl<B: Balance, P: Permits> Balance for SimpleAccount<B, P> {
-    const INIT: Self = Self {
-        balance: B::INIT,
-        permits: P::INIT,
-    };
-
     fn invalidate(&self) {
         self.balance.invalidate();
     }
@@ -40,11 +48,6 @@ unsafe impl<B: Balance, P: Permits> Balance for SimpleAccount<B, P> {
 }
 
 impl<B: Balance, P: Permits> Permits for SimpleAccount<B, P> {
-    const INIT: Self = Self {
-        balance: B::INIT,
-        permits: P::INIT,
-    };
-
     fn try_ref(&self) -> bool {
         self.permits.try_ref()
     }

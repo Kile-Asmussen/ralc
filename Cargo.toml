@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Reallocation counting-based smart pointers"
 
+[workspace]
+members = ["ralc-internals"]
+
 [dependencies]
 parking_lot.version = "0.12.5"
 parking_lot.optional = true

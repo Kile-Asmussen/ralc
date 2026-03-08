@@ -2,6 +2,7 @@ use std::{cell::Cell, sync::atomic::AtomicU64};
 
 use parking_lot::{RawRwLock, lock_api};
 
+/// Accounts that have an initial state
 pub trait Init {
     fn init() -> Self
     where

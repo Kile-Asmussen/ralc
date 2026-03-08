@@ -6,7 +6,7 @@ use std::{
 
 use crate::accounts::init::Init;
 
-/// # Safety requirements:
+/// # Safety requirements
 /// ```rust
 /// # use racl::accounts::{counts::*, counters::*};
 /// # fn test<Impl : Counter>() {

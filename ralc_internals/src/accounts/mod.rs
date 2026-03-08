@@ -1,57 +1,38 @@
 #![allow(unused)]
 use std::{cell::Cell, num::NonZeroU64, ops::Deref, ptr::NonNull, sync::atomic::AtomicU64};
 
-use crate::accounts::{balances::Balance, permits::Permits};
+use crate::accounts::{balances::Balance, freeable::Freeable, permits::Permits};
 
 pub mod balances;
-pub mod init;
+pub mod freeable;
 pub mod permits;
-pub mod simple;
 
 pub trait Account: Freeable + Balance {}
 
-/// # Safety reuirements
-/// 1. `free` must drop `mut` permit.
-pub unsafe trait Freeable: Permits {
-    /// # Safety requirements:
-    /// 1. After calling it, no other interactions may be made with this object.
-    /// 2. `mut` permit is invoked on [`.permits()`](Self::permits)
-    unsafe fn free(&self) {
-        unsafe {
-            // SAFETY:
-            // Guaranteed by caller.
-            self.drop_mut();
-        }
-        // SAFETY:
-        // 1. See above
-    }
-}
-
-#[test]
-fn test() {
-    size_of::<AccPtr<dyn Account>>();
-}
-
-use parking_lot::RawRwLock;
 pub(crate) use private::AccPtr;
+
+// https://github.com/rust-lang/rust-project-goals/issues/273
 mod private {
     use crate::accounts::Account;
     use std::{ops::Deref, ptr::NonNull};
 
+    /// A pointer to an account allocated to guard and track a single allocation.
     #[repr(transparent)]
-    pub(crate) struct AccPtr<A: Account + ?Sized> {
-        /// # Safety invariant:
+    pub struct AccPtr<A: Account + ?Sized> {
+        /// # Safety invariant
         /// 1. ONE of these hold:
         ///    1. This is a `'static` reference.
         ///    2. This is a reference to a thread-local and this type is not `Send`
-        ///    3. This is a reference to a shorter lifetime contained in `A`.
+        ///    3. This is a reference to a shorter lifetime contained in the type `A`.
         account: NonNull<A>,
     }
+
     impl<A: Account> Clone for AccPtr<A> {
         fn clone(&self) -> Self {
             *self
         }
     }
+
     impl<A: Account> Copy for AccPtr<A> {}
 
     unsafe impl<A: Account + Sync> Send for AccPtr<A> {}

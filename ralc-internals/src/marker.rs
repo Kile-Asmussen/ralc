@@ -22,23 +22,36 @@ macro_rules! declare_marker_type {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct U56([u8; 7]);
 
-impl U56 {
-    /// Convert this `U56` to `u64` for general use.
-    pub fn to_u64(self) -> u64 {
-        let s = self.0;
-        #[cfg(target_endian = "big")]
-        let bytes = [0, s[0], s[1], s[2], s[3], s[4], s[5], s[6]];
+impl From<u64> for U56 {
+    fn from(value: u64) -> Self {
         #[cfg(target_endian = "little")]
-        let bytes = [s[0], s[1], s[2], s[3], s[4], s[5], s[6], 0];
-        return u64::from_ne_bytes(bytes);
-    }
+        {
+            let b = value.to_le_bytes();
+            return U56([b[0], b[1], b[2], b[3], b[4], b[5], b[6]]);
+        }
 
-    /// Create a `U56` from the lowest 56 bits of an `u64`.
-    pub fn from_u64(n: u64) -> U56 {
-        let b = n.to_ne_bytes();
-        #[cfg(target_endian = "little")]
-        return U56([b[0], b[1], b[2], b[3], b[4], b[5], b[6]]);
         #[cfg(target_endian = "big")]
-        return U56([b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+        {
+            let b = n.to_be_bytes();
+            return U56([b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+        }
+    }
+}
+
+impl From<U56> for u64 {
+    fn from(value: U56) -> Self {
+        let s = value.0;
+
+        #[cfg(target_endian = "big")]
+        {
+            let bytes = [0, s[0], s[1], s[2], s[3], s[4], s[5], s[6]];
+            return u64::from_be_bytes(bytes);
+        }
+
+        #[cfg(target_endian = "little")]
+        {
+            let bytes = [s[0], s[1], s[2], s[3], s[4], s[5], s[6], 0];
+            return u64::from_le_bytes(bytes);
+        }
     }
 }

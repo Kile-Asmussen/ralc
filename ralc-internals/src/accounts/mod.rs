@@ -9,7 +9,7 @@ pub mod permits;
 
 pub trait Account: Freeable + Balance {}
 
-pub(crate) use private::AccPtr;
+pub use private::AccPtr;
 
 // https://github.com/rust-lang/rust-project-goals/issues/273
 mod private {

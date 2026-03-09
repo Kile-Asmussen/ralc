@@ -6,10 +6,8 @@ use crate::{
 };
 
 pub mod accounts;
+pub mod delegate_impl;
 pub mod marker;
-#[cfg(feature = "parking_lot")]
-pub mod parking_lot_permit;
-pub mod simple_account;
 
 pub use private::RalcRaw;
 
@@ -52,7 +50,7 @@ mod private {
         pub unsafe fn from_parts(ptr: AccPtr<A>, data: Box<T>) -> Self {
             RalcRaw {
                 _variant: V::default(),
-                count: U56::from_u64(ptr.check()),
+                count: ptr.check().into(),
                 account: ptr,
                 data: unsafe { NonNull::new_unchecked(Box::into_raw(data)) },
             }
@@ -81,7 +79,7 @@ mod private {
         /// TODO
         #[inline]
         pub fn is_disowned(self) -> bool {
-            self.account.check() == self.count.to_u64()
+            self.account.check() == self.count.into()
         }
 
         /// TODO
@@ -187,7 +185,7 @@ mod private {
         pub unsafe fn try_reclaim_dropped_box(self) -> Option<Self> {
             if self.is_disowned() {
                 let owned = Self {
-                    count: U56::from_u64(self.account.check()),
+                    count: self.account.check().into(),
                     ..self
                 };
                 unsafe {
@@ -212,7 +210,7 @@ mod private {
         #[inline]
         pub unsafe fn try_reclaim_dropped_box_retaining_mut(&mut self) -> Option<Self> {
             if self.is_disowned() {
-                self.count = U56::from_u64(self.account.check());
+                self.count = self.account.check().into();
 
                 Some(*self)
             } else {

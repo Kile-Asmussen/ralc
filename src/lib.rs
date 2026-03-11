@@ -2,6 +2,7 @@ use ralc_internals::{RalcRaw, accounts::Account, declare_marker_type, marker::Ma
 
 mod bumpallo_ledger;
 mod global;
+mod ledgers;
 
 declare_marker_type!(Boxed, 1);
 declare_marker_type!(Mutable, 2);

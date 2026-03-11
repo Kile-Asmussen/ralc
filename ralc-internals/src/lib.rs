@@ -1,3 +1,9 @@
+#![feature(ptr_metadata)]
+#![feature(ptr_as_uninit)]
+#![feature(cast_maybe_uninit)]
+#![feature(maybe_uninit_fill)]
+#![feature(allocator_api)]
+
 use std::ptr::NonNull;
 
 use crate::{
@@ -7,6 +13,7 @@ use crate::{
 
 pub mod accounts;
 pub mod delegate_impl;
+pub mod ledger;
 pub mod marker;
 
 pub use private::RalcRaw;
